@@ -86,7 +86,7 @@ export default function DeviceApprovalContent() {
               <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Authorization Code</p>
               <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
                 <p className="text-xl font-mono font-bold text-cyan-400 text-center tracking-widest">
-                  {userCode || "---"}
+                  {userCode || ""}
                 </p>
               </div>
               <p className="text-xs text-zinc-600 text-center">Share this code with the requesting device</p>

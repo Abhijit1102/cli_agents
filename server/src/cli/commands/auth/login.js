@@ -1,4 +1,4 @@
-import { cancel, confirm, intro, isCancel } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel ,outro } from "@clack/prompts";
 import { Command } from "commander";
 import chalk from "chalk";
 import os from "os";
@@ -74,6 +74,9 @@ export async function loginAction(opts) {
     spinner.stop()
 
     logger.error("error : ",error)
+
+    logger.info("Device code response data:", data);
+    logger.info("Device code response error:", error);
 
     if(error || !data) {
       logger.error(
