@@ -1,6 +1,5 @@
-import { cancel, confirm, intro, isCancel ,outro } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel, outro } from "@clack/prompts";
 import { Command } from "commander";
-import chalk from "chalk";
 import os from "os";
 import path from "path";
 import { z } from "zod/v4";
@@ -12,19 +11,17 @@ import { logger } from "../../../logger.js";
 
 import yoctoSpinner from "yocto-spinner";
 
-
-import { CLIENT_ID , DEMO_URL } from "../../../core/config.js";
-import { getStoredToken , isTokenExpired, storeToken } from "../../../core/token.js";
+import { CLIENT_ID, DEMO_URL } from "../../../core/config.js";
+import { getStoredToken, isTokenExpired, storeToken } from "../../../core/token.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".better-auth");
 const TOKEN_FILE = path.join(CONFIG_DIR, "token.json");
-
 
 // =============================
 // LOGIN ACTION
 // =============================
 export async function loginAction(opts) {
-  intro(logger.info("Auth CLI Login"));
+  intro(logger.bold("Auth CLI Login"));
 
   const schema = z.object({
     serverUrl: z.string().optional(),
@@ -33,11 +30,12 @@ export async function loginAction(opts) {
 
   const parsed = schema.parse(opts);
 
-  const serverUrl = DEMO_URL //parsed.serverUrl ?? process.env.SERVER_URL;
-  const clientId =  CLIENT_ID //parsed.clientId ?? CLIENT_ID;
+  const serverUrl = DEMO_URL;
+  const clientId = CLIENT_ID;
 
-  logger.info("Server URL:", serverUrl);
-  logger.info("Client ID:", clientId);
+  logger.section("Configuration");
+  logger.info("Server URL:", logger.gray(serverUrl));
+  logger.info("Client ID:", logger.gray(clientId));
 
   const existingToken = await getStoredToken();
   const expired = isTokenExpired();
@@ -49,46 +47,38 @@ export async function loginAction(opts) {
     });
 
     if (isCancel(shouldReAuth) || !shouldReAuth) {
-      cancel("Login cancelled");
+      cancel(logger.warn("Login cancelled"));
       process.exit(0);
     }
   }
 
   const authClient = createAuthClient({
-    baseURL:serverUrl,
-    plugins:[deviceAuthorization()]
-  })
-
-  const spinner = yoctoSpinner({
-    text: "Requesting device authorization..."
+    baseURL: serverUrl,
+    plugins: [deviceAuthorization()],
   });
+
+  const spinner = yoctoSpinner({ text: "Requesting device authorization..." });
 
   spinner.start();
 
   try {
-    const {data, error } = await authClient.device.code({
+    const { data, error } = await authClient.device.code({
       client_id: clientId,
-      scope: "openid profile email"
-    })
-    
-    spinner.stop()
+      scope: "openid profile email",
+    });
 
-    logger.error("error : ",error)
+    spinner.stop();
 
-    logger.info("Device code response data:", data);
-    logger.info("Device code response error:", error);
-
-    if(error || !data) {
+    if (error || !data) {
       logger.error(
-        `Failded to request device Authorization : ${error.error_description}`
-      )
-
+        "Failed to request device Authorization:",
+        logger.bold(error.error_description),
+      );
       process.exit(1);
-    } 
+    }
 
-    logger.info(
-      `data : ${data}`
-    )
+    logger.section("Device Authorization");
+    logger.success("Device code received!");
 
     const {
       device_code,
@@ -99,69 +89,49 @@ export async function loginAction(opts) {
       expires_in,
     } = data;
 
-    logger.info(
-      "Device Authorization required."
-    )
-
-    logger.info(
-      `Please visit ${chalk.underline.blue(verification_uri || verification_uri_complete)}`
-    )
-
-    logger.info(
-      `Enter Code : ${chalk.bold.green(user_code)}`
-    )
+    logger.info("Please visit:", logger.underline(verification_uri));
+    logger.info("Enter Code:", logger.bold(user_code));
 
     const shouldOpen = await confirm({
-      message: "Open browser automatically.",
-      initialValue: true
-    })
+      message: "Open browser automatically?",
+      initialValue: true,
+    });
 
-    if(!isCancel(shouldOpen) && shouldOpen) {
-      const uriToOpen =  verification_uri_complete || verification_uri;
-      await open(uriToOpen)
+    if (!isCancel(shouldOpen) && shouldOpen) {
+      await open(verification_uri_complete || verification_uri);
     }
 
-     logger.info(
-      chalk.gray(
-        `Waiting for authorization (expries in ${Math.floor(
-          expires_in /60,
-        )} minutes) ...`
-      )
+    logger.info(
+      logger.gray(
+        `Waiting for authorization (expires in ${Math.floor(
+          expires_in / 60,
+        )} minutes)...`,
+      ),
     );
 
-    const token = await pollForToken(
-      authClient,
-      device_code,
-      clientId,
-      interval
-    )
+    // Polling for token
+    const token = await pollForToken(authClient, device_code, clientId, interval);
 
-    if(token) {
+    if (token) {
       const saved = await storeToken(token);
+      if (!saved) {
+        logger.warn("Could not save authentication token.");
+        logger.info("You may need to login again next time.");
+      }
+    }
 
-      if(!saved) {
-        logger.warn("Warning : Could not save authentication token.")
-        logger.info("You may need to login again on next use.")
-      };
-     }
-
-    // get the user data
-
-    outro(logger.success("Login Successfully!"))
-
-    logger.success(`Token saved to : ${TOKEN_FILE}`)
-
-    logger.info("You can use AI command without logging again.");
-  } catch (error) {
-     
+    outro(logger.success("Login Successfully!"));
+    logger.success(`Token saved to: ${logger.bold(TOKEN_FILE)}`);
+    logger.info("You can now use AI commands without logging in again.");
+  } catch (err) {
     spinner.stop();
-    logger.error(
-      `error : ${error}`
-    )
+    logger.error("Unexpected error:", logger.bold(String(err)));
   }
 }
 
-
+// =============================
+// POLL FOR TOKEN
+// =============================
 async function pollForToken(authClient, deviceCode, clientId, interval) {
   let pollingInterval = interval;
 
@@ -172,12 +142,14 @@ async function pollForToken(authClient, deviceCode, clientId, interval) {
 
   let dots = 0;
 
+  logger.section("Authorization");
+
   return new Promise((resolve, reject) => {
     const poll = async () => {
       dots = (dots + 1) % 4;
 
-      spinner.text = chalk.gray(
-        `Polling for authorization ${".".repeat(dots)}${" ".repeat(3 - dots)}`
+      spinner.text = logger.gray(
+        `Polling for authorization ${".".repeat(dots)}${" ".repeat(3 - dots)}`,
       );
 
       if (!spinner.isSpinning) spinner.start();
@@ -188,15 +160,14 @@ async function pollForToken(authClient, deviceCode, clientId, interval) {
           device_code: deviceCode,
           client_id: clientId,
           fetchOptions: {
-            headers: {
-              "user-agent": `My CLI`,
-            },
+            headers: { "user-agent": "My CLI" },
           },
         });
 
         if (data?.access_token) {
           spinner.stop();
-          logger.info(`Your access token: ${data.access_token}`);
+          logger.success("Authorization completed!");
+          logger.info("Access Token:", logger.bold(data.access_token));
           return resolve(data);
         }
 
@@ -211,23 +182,23 @@ async function pollForToken(authClient, deviceCode, clientId, interval) {
 
             case "access_denied":
               spinner.stop();
-              console.error("Access denied by user.");
+              logger.error("Access denied by user.");
               return reject(new Error("access_denied"));
 
             case "expired_token":
               spinner.stop();
-              console.error("Device code expired. Start again.");
+              logger.error("Device code expired. Start again.");
               return reject(new Error("expired_token"));
 
             default:
               spinner.stop();
-              logger.error(`Error: ${error.error_description}`);
+              logger.error("Error:", logger.bold(error.error_description));
               return reject(new Error(error.error_description));
           }
         }
       } catch (err) {
         spinner.stop();
-        logger.error(err);
+        logger.error("Polling error:", logger.bold(String(err)));
         return reject(err);
       }
 
@@ -237,8 +208,6 @@ async function pollForToken(authClient, deviceCode, clientId, interval) {
     setTimeout(poll, pollingInterval * 1000);
   });
 }
-
-
 
 // =============================
 // COMMAND EXPORT

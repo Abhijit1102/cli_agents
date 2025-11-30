@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 dotenv.config();
 
-export const CONFIG_DIR = path.join(os.homedir(), ".better-auth");
+export const CONFIG_DIR = path.join(os.homedir(), ".cli_agents");
 export const TOKEN_FILE = path.join(CONFIG_DIR, "token.json");
 
 export const DEMO_URL = "http://localhost:3000/api/auth";
