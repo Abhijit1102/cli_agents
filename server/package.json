@@ -26,6 +26,7 @@
     "express": "^5.1.0",
     "figlet": "^1.9.4",
     "module-alias": "^2.2.3",
+    "open": "^11.0.0",
     "prisma": "^6.19.0",
     "yocto-spinner": "^1.0.0",
     "zod": "^4.1.13"
