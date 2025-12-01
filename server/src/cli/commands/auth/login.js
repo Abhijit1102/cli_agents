@@ -1,7 +1,5 @@
 import { cancel, confirm, intro, isCancel, outro } from "@clack/prompts";
 import { Command } from "commander";
-import os from "os";
-import path from "path";
 import { z } from "zod/v4";
 import open from "open";
 
@@ -11,11 +9,9 @@ import { logger } from "../../../logger.js";
 
 import yoctoSpinner from "yocto-spinner";
 
-import { CLIENT_ID, DEMO_URL } from "../../../core/config.js";
+import { CLIENT_ID, DEMO_URL ,TOKEN_FILE } from "../../../core/config.js";
 import { getStoredToken, isTokenExpired, storeToken } from "../../../core/token.js";
 
-const CONFIG_DIR = path.join(os.homedir(), ".better-auth");
-const TOKEN_FILE = path.join(CONFIG_DIR, "token.json");
 
 // =============================
 // LOGIN ACTION
