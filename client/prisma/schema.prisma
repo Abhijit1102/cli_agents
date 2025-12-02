@@ -1,40 +1,71 @@
+// --------------------------------------
+// Prisma Client
+// --------------------------------------
 generator client {
   provider = "prisma-client"
+  // If you want a custom output, uncomment:
   output   = "../lib/generated/prisma"
 }
 
+// --------------------------------------
+// Datasource
+// --------------------------------------
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model Conversation {
-  id        String           @id @default(uuid())
+// --------------------------------------
+// ENUMS
+// --------------------------------------
+enum ConversationMode {
+  chat
+  tool
+  agent
+}
+
+// --------------------------------------
+// MODELS
+// --------------------------------------
+
+// USER
+model User {
+  id            String        @id
+  name          String
+  email         String        @unique
+  emailVerified Boolean       @default(false)
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // RELATIONS
+  conversations Conversation[]
+  accounts      Account[]
+  sessions      Session[]
+
+  @@map("user")
+}
+
+// SESSION
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique(map: "session_token_unique")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
   userId    String
-  title     String?
-  mode      ConversationMode @default(chat)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  user      user             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // FIXED: rename Message -> messages
-  messages Message[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
 }
 
-model Message {
-  id             String   @id @default(uuid())
-  conversationId String
-  role           String
-  content        String
-  createdAt      DateTime @default(now())
-
-  Conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId])
-}
-
-model account {
-  id                    String    @id
+// ACCOUNT (OAuth / Credentials)
+model Account {
+  id                    String   @id
   accountId             String
   providerId            String
   userId                String
@@ -44,16 +75,32 @@ model account {
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
   scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime
-  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  password              String? // only if using credentials
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@map("account")
 }
 
-model deviceCode {
-  id              String    @id
+// VERIFICATION CODES (email OTP)
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// DEVICE CODE (OAuth Device Flow)
+model DeviceCode {
+  id              String   @id
   deviceCode      String
   userCode        String
   userId          String?
@@ -63,48 +110,35 @@ model deviceCode {
   pollingInterval Int?
   clientId        String?
   scope           String?
+
+  @@map("deviceCode")
 }
 
-model session {
-  id        String   @id
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  ipAddress String?
-  userAgent String?
+// CONVERSATIONS (Chat, Tools, Agents)
+model Conversation {
+  id        String           @id @default(uuid())
   userId    String
-  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  mode      ConversationMode @default(chat)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // RELATION
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
 
   @@index([userId])
 }
 
-model user {
-  id            String         @id
-  name          String
-  email         String         @unique
-  emailVerified Boolean        @default(false)
-  image         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime
-  Conversation  Conversation[]
-  account       account[]
-  session       session[]
-}
+// MESSAGES (User, Assistant, System, Tool)
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String   // user | assistant | system | tool
+  content        String   // JSON string for complex payloads
+  createdAt      DateTime @default(now())
 
-model verification {
-  id         String   @id
-  identifier String
-  value      String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  @@index([identifier])
-}
-
-enum ConversationMode {
-  chat
-  tool
-  agent
+  @@index([conversationId])
 }

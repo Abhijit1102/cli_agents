@@ -10,6 +10,31 @@ import { getStoredToken } from "../../core/token.js"
 import {getMe} from "../../api/user.api.js"
 import { getAIResponseFromAPI } from "../../api/getAIreply.js"
 
+import { marked } from "marked";
+import { markedTerminal } from "marked-terminal";
+
+
+// Configure marked to use terminal renderer
+marked.use(
+  markedTerminal({
+    // Styling options for terminal output
+    code: chalk.cyan,
+    blockquote: chalk.gray.italic,
+    heading: chalk.green.bold,
+    firstHeading: chalk.magenta.underline.bold,
+    hr: chalk.reset,
+    listitem: chalk.reset,
+    list: chalk.reset,
+    paragraph: chalk.reset,
+    strong: chalk.bold,
+    em: chalk.italic,
+    codespan: chalk.yellow.bgBlack,
+    del: chalk.dim.gray.strikethrough,
+    link: chalk.blue.underline,
+    href: chalk.blue.underline,
+  })
+);
+
 const chatService = new ChatService();
 
 async function getUserFromToken() {
@@ -67,36 +92,48 @@ async function  saveMessage(conversationId, role, content) {
 
 async function getAIResponse(conversationId) {
   const spinner = yoctoSpinner({ 
-    text: "AI is thinking...", 
-    color: "cyan" 
+    text: "AI is thinking...",
+    color: "cyan"
   }).start();
 
   const dbMessages = await chatService.getMessages(conversationId);
   const aiMessages = chatService.formatMessagesForAI(dbMessages);
-  // console.log("Ai Message : ", aiMessages);
 
   try {
+    // Stop thinking spinner
     spinner.stop();
+
+    // Print assistant header
     console.log("\n");
-    const header = chalk.green.bold("🤖 Assistant:");
-    console.log(header);
+    console.log(chalk.green.bold("🤖 Assistant:"));
     console.log(chalk.gray("─".repeat(60)));
 
-    // Call Next.js API instead of local AIService
+    // Show response spinner
+    const responseSpinner = yoctoSpinner({
+      text: "✨ AI is responding..."
+    }).start();
+
+    // Call Next.js API to get full AI response
     const fullResponse = await getAIResponseFromAPI(aiMessages);
 
-    // Render markdown
-    // const renderedMarkdown = marked.parse(fullResponse);
-    console.log(fullResponse);
+    // Stop "AI is responding..." spinner
+    responseSpinner.stop();
+
+    // Render Markdown using your logger
+    logger.markdown(fullResponse);
+
+    // Footer line
     console.log(chalk.gray("─".repeat(60)));
     console.log("\n");
 
     return fullResponse;
+
   } catch (error) {
     spinner.error("Failed to get AI response");
     throw error;
   }
 }
+
 
 async function updateConversationTitle(conversationId, userInput, messageCount) {
   if (messageCount === 1) {

@@ -167,7 +167,7 @@ const logger = {
   // MARKDOWN LOGGING
   // ──────────────────────────────
   markdown: (mdText) => {
-    console.log(marked(mdText));
+    console.log(marked.parse(mdText));
   },
 
   // ──────────────────────────────

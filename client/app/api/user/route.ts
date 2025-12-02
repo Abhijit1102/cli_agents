@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const user = await prisma.user.findFirst({
       where: {
-        session: {
+        sessions: {
           some: {
             token: token,
           },
