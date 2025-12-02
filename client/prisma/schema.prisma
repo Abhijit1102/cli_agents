@@ -1,11 +1,36 @@
 generator client {
   provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  output   = "../lib/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Conversation {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String?
+  mode      ConversationMode @default(chat)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      user             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // FIXED: rename Message -> messages
+  messages Message[]
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  Conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
 }
 
 model account {
@@ -78,24 +103,8 @@ model verification {
   @@index([identifier])
 }
 
-model Conversation {
-  id        String    @id
-  userId    String
-  title     String?
-  mode      String    @default("chat")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime
-  user      user      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Message   Message[]
-}
-
-model Message {
-  id             String       @id
-  conversationId String
-  role           String
-  content        String
-  createdAt      DateTime     @default(now())
-  Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId])
+enum ConversationMode {
+  chat
+  tool
+  agent
 }

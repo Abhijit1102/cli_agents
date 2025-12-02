@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "bin": {
-    "agent": "./src/cli/main.js"
+    "agents": "./src/cli/main.js"
   },
   "scripts": {
     "dev": "nodemon --watch src src/index.js",
@@ -25,6 +25,8 @@
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
     "figlet": "^1.9.4",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
     "open": "^11.0.0",
     "yocto-spinner": "^1.0.0",
     "zod": "^4.1.13"
