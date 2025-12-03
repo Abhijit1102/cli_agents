@@ -1,27 +1,6 @@
 import chalk from "chalk";
 import boxen from "boxen";
 import { marked } from "marked";
-import TerminalRenderer from "marked-terminal";
-
-// Configure marked to use terminal renderer
-marked.use(
-  new TerminalRenderer({
-    code: chalk.cyan,
-    blockquote: chalk.gray.italic,
-    heading: chalk.green.bold,
-    firstHeading: chalk.magenta.underline.bold,
-    hr: chalk.reset,
-    listitem: chalk.reset,
-    list: chalk.reset,
-    paragraph: chalk.reset,
-    strong: chalk.bold,
-    em: chalk.italic,
-    codespan: chalk.yellow.bgBlack,
-    del: chalk.dim.gray.strikethrough,
-    link: chalk.blue.underline,
-    href: chalk.blue.underline,
-  })
-);
 
 // ──────────────────────────────
 // Display messages in boxes
@@ -145,7 +124,7 @@ const logger = {
   // ──────────────────────────────
   // HELP BOX
   // ──────────────────────────────
-  helpBox: () => {
+  chatHelpBox: () => {
     const helpBox = boxen(
       `${chalk.gray('• Type your message and press Enter')}\n` +
       `${chalk.gray('• Markdown formatting is supported in responses')}\n` +
@@ -161,6 +140,92 @@ const logger = {
     );
     console.log(helpBox);
   },
+
+  AgentHelpBox:() => {  
+    const helpBox = boxen(
+      `${chalk.cyan.bold("What can the agent do?")}\n\n` +
+      `${chalk.gray('• Generate complete applications from descriptions')}\n` +
+      `${chalk.gray('• Create all necessary files and folders')}\n` +
+      `${chalk.gray('• Include setup instructions and commands')}\n` +
+      `${chalk.gray('• Generate production-ready code')}\n\n` +
+      `${chalk.yellow.bold("Examples:")}\n` +
+      `${chalk.white('• "Build a todo app with React and Tailwind"')}\n` +
+      `${chalk.white('• "Create a REST API with Express and MongoDB"')}\n` +
+      `${chalk.white('• "Make a weather app using OpenWeatherMap API"')}\n\n` +
+      `${chalk.gray('Type "exit" to end the session')}`,
+        {
+          padding: 1,
+          margin: { bottom: 1 },
+          borderStyle: "round",
+          borderColor: "cyan",
+          title: "💡 Agent Instructions",
+        }
+      );
+      console.log(helpBox);
+    },
+
+
+  // ________________________________________________
+  //  tool 
+  // ________________________________________________
+
+  ToolBox(selectedTools, availableTools) {
+    const toolsList = selectedTools.length
+      ? selectedTools
+          .map(id => {
+            const tool = availableTools.find(t => t.id === id);
+            return tool ? `  • ${tool.name}` : null;
+          })
+          .filter(Boolean)
+          .join("\n")
+      : chalk.gray("  • No tools enabled");
+
+    console.log(
+      boxen(chalk.green(`✅ Enabled tools:\n${toolsList}`), {
+        padding: 1,
+        margin: { top: 1, bottom: 1 },
+        borderStyle: "round",
+        borderColor: "green",
+        title: "🛠️ Active Tools",
+        titleAlignment: "center",
+      })
+    );
+  },
+
+
+  conversationInfoToolCalling(conversation, selectedTools = [], availableTools = []) {
+    // Format enabled tools
+    const toolsList = selectedTools.length
+      ? selectedTools
+          .map(id => {
+            const tool = availableTools.find(t => t.id === id);
+            return tool ? `  • ${tool.name}` : null;
+          })
+          .filter(Boolean)
+          .join("\n")
+      : chalk.gray("  • No tools enabled");
+
+    // Build box content
+    const content =
+      `${chalk.bold("Conversation")}: ${conversation.title}\n` +
+      `${chalk.gray("ID: " + conversation.id)}\n` +
+      `${chalk.gray("Mode: " + conversation.mode)}\n\n` +
+      `${chalk.cyan.bold("Enabled Tools:")}\n` +
+      `${toolsList}`;
+
+    // Print the box
+    console.log(
+      boxen(content, {
+        padding: 1,
+        margin: { top: 1, bottom: 1 },
+        borderStyle: "round",
+        borderColor: "cyan",
+        title: "💬 Tool Calling Session",
+        titleAlignment: "center",
+      })
+    );
+  },
+
 
 
   // ──────────────────────────────

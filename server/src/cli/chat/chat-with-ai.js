@@ -134,7 +134,6 @@ async function getAIResponse(conversationId) {
   }
 }
 
-
 async function updateConversationTitle(conversationId, userInput, messageCount) {
   if (messageCount === 1) {
     const title = userInput.slice(0, 50) + (userInput.length > 50 ? "..." : "");
@@ -143,7 +142,7 @@ async function updateConversationTitle(conversationId, userInput, messageCount) 
 }
 
 async function chatLoop(conversation) {
-  logger.helpBox();
+  logger.chatHelpBox();
 
   while( true) {
     const userInput = await text({

@@ -5,6 +5,7 @@ import { getStoredToken } from "../../../core/token.js";
 import { select } from "@clack/prompts";
 import axios from "axios";
 import { startChat } from "../../chat/chat-with-ai.js";
+import { startToolChat } from "../../chat/chat-with-ai-toot.js";
 
 async function fetchUserByToken(token) {
   try {
@@ -64,6 +65,7 @@ const wakeUpAction = async () => {
       break;
     case "tool":
       logger.success("Tool calling is selected");
+      startToolChat("tool")
       break;
     case "agent":
       logger.warn("Advanced AI agent is coming soon...");
