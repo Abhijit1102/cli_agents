@@ -1,0 +1,20 @@
+[project]
+name = "cli-agents"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anyio>=4.13.0",
+    "openai>=2.32.0",
+    "python-dotenv>=1.2.2",
+    "rich>=15.0.0",
+    "typer>=0.25.0",
+]
+
+[project.scripts]
+cli_agents = "cli_agents.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli_agents*"]
