@@ -67,6 +67,21 @@ SEARCH_PROJECT_TOOL = {
     },
 }
 
+ANALYZE_IMAGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "analyze_image",
+        "description": "Analyze an image file and return metadata, dimensions, format, and basic structure details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Image file path to analyze."},
+            },
+            "required": ["path"],
+        },
+    },
+}
+
 
 def read_file(path: str) -> str:
     target = Path(path)
@@ -131,3 +146,54 @@ def search_project(query: str, root: str | None = None) -> str:
     if not results:
         return f"No matches found for '{query}'."
     return json.dumps(results, indent=2)
+
+
+def analyze_image(path: str) -> str:
+    target = Path(path)
+    if not target.exists():
+        return f"Error: file not found: {target}"
+    if not target.is_file():
+        return f"Error: path is not a file: {target}"
+
+    try:
+        from PIL import Image
+    except ImportError:
+        return "Error: missing dependency Pillow. Install with: pip install Pillow"
+
+    try:
+        if target.suffix.lower() in {".svg", ".svgz"}:
+            text = target.read_text(encoding="utf-8", errors="replace")
+            shapes = text.count("<path") + text.count("<rect") + text.count("<circle") + text.count("<line")
+            return (
+                f"format: SVG\n"
+                f"size: {target.stat().st_size} bytes\n"
+                f"element counts: paths={text.count('<path')}, rects={text.count('<rect')}, circles={text.count('<circle')}, lines={text.count('<line')}\n"
+                f"shape summary: {shapes} vector elements"
+            )
+
+        with Image.open(target) as image:
+            info = image.info or {}
+            frames = getattr(image, "n_frames", 1)
+            metadata_lines = [
+                f"format: {image.format}",
+                f"size: {image.width}x{image.height}",
+                f"mode: {image.mode}",
+                f"frames: {frames}",
+            ]
+
+            if info:
+                metadata_lines.append(f"info: {json.dumps(info, default=str, indent=2)}")
+
+            if image.mode == "P" and image.palette:
+                metadata_lines.append(f"palette mode: {image.palette.mode}")
+
+            try:
+                exif_data = image._getexif() or {}
+                if exif_data:
+                    metadata_lines.append(f"exif: {json.dumps({str(k): str(v) for k, v in exif_data.items()}, indent=2)}")
+            except Exception:
+                pass
+
+            return "\n".join(metadata_lines)
+    except Exception as exc:
+        return f"Error analyzing image: {exc}"

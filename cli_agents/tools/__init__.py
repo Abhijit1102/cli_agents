@@ -1,8 +1,10 @@
 from .fs_tools import (
+    ANALYZE_IMAGE_TOOL,
     LIST_FOLDER_TOOL,
     READ_FILE_TOOL,
     SEARCH_PROJECT_TOOL,
     WRITE_FILE_TOOL,
+    analyze_image,
     list_folder,
     read_file,
     search_project,
@@ -16,6 +18,7 @@ TOOLS = [
     WRITE_FILE_TOOL,
     LIST_FOLDER_TOOL,
     SEARCH_PROJECT_TOOL,
+    ANALYZE_IMAGE_TOOL,
     RUN_COMMAND_TOOL,
     TAVILY_SEARCH_TOOL,
 ]
@@ -25,6 +28,7 @@ _EXECUTORS = {
     "write_file": write_file,
     "list_folder": list_folder,
     "search_project": search_project,
+    "analyze_image": analyze_image,
     "run_shell_command": run_shell_command,
     "tavily_search": tavily_search,
 }

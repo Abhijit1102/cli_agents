@@ -1,6 +1,6 @@
 import json
 import anyio
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict
 
 from cli_agents.config import AppConfig
 from cli_agents.memory import ConversationMemory
@@ -13,7 +13,11 @@ class AIController:
         self.config = config
         self.memory = memory
         self.tools = TOOLS
-        self.last_usage: dict = {}
+        self.last_usage: Dict = {}
+
+    # ───────────────────────────────
+    # Public Helpers
+    # ───────────────────────────────
 
     def reset(self) -> str:
         self.memory.reset()
@@ -23,13 +27,22 @@ class AIController:
     def get_last_usage(self) -> dict:
         return dict(self.last_usage)
 
-    def _stream_text(self, text: str) -> AsyncGenerator[str, None]:
-        words = text.split(" ")
-        for token in words:
-            yield token + " "
+    # ───────────────────────────────
+    # Streaming Utility (better UX)
+    # ───────────────────────────────
+
+    async def _stream_text(self, text: str) -> AsyncGenerator[str, None]:
+        for i in range(0, len(text), 4):  # chunked streaming
+            yield text[i:i + 4]
+            await anyio.sleep(0.01)
+
+    # ───────────────────────────────
+    # Usage Tracking
+    # ───────────────────────────────
 
     async def _record_usage(self, response) -> None:
         usage = getattr(response, "usage", None)
+
         if usage is None:
             self.last_usage = {}
             return
@@ -41,32 +54,64 @@ class AIController:
         try:
             self.last_usage = dict(usage)
         except Exception:
-            self.last_usage = {k: getattr(usage, k) for k in dir(usage) if not k.startswith("_")}
+            self.last_usage = {
+                k: getattr(usage, k)
+                for k in dir(usage)
+                if not k.startswith("_")
+            }
+
+    # ───────────────────────────────
+    # Safe Tool Execution
+    # ───────────────────────────────
+
+    async def _execute_tool_safe(self, tool_name: str, arguments: dict) -> str:
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: execute_tool(tool_name, arguments)
+            )
+            return str(result)
+        except Exception as e:
+            return f"[Tool Error] {str(e)}"
+
+    # ───────────────────────────────
+    # Core Agent Loop
+    # ───────────────────────────────
 
     async def handle_message(self, user_input: str) -> AsyncGenerator[str, None]:
         normalized = user_input.strip()
+
         if not normalized:
             return
 
+        # ─── Commands ─────────────────
         if normalized == "/reset":
             yield self.reset()
             return
 
         if normalized.startswith("/run "):
             command = normalized[5:].strip()
-            result = await anyio.to_thread.run_sync(
-                lambda: execute_tool("run_shell_command", {"command": command, "timeout": 30})
+
+            result = await self._execute_tool_safe(
+                "run_shell_command",
+                {"command": command, "timeout": 30},
             )
+
             self.memory.append_user(user_input)
             self.memory.append_tool("run_shell_command", result)
-            yield result
+
+            yield f"\n🖥 Running command:\n```bash\n{command}\n```\n"
+            yield f"```\n{result}\n```\n"
             return
 
+        # ─── Normal Chat Flow ─────────
         self.memory.append_user(user_input)
+
+        max_iterations = 4
         iteration = 0
 
-        while iteration < 4:
+        while iteration < max_iterations:
             iteration += 1
+
             try:
                 response = await self.client.chat.completions.create(
                     model=self.config.model,
@@ -82,28 +127,41 @@ class AIController:
                 return
 
             await self._record_usage(response)
+
             message = response.choices[0].message
             tool_calls = getattr(message, "tool_calls", None)
             assistant_text = message.content or ""
 
+            # ─── Case 1: No tool needed ───
             if not tool_calls:
                 self.memory.append_assistant(assistant_text)
-                for token in self._stream_text(assistant_text):
-                    yield token
+
+                async for chunk in self._stream_text(assistant_text):
+                    yield chunk
                 return
 
+            # ─── Case 2: Tool calls ───────
             self.memory.append_assistant(assistant_text)
+
+            if assistant_text.strip():
+                yield f"\n🤖 {assistant_text}\n"
+
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
-                yield f"\n🔧 Executing tool: {tool_name} {arguments}\n"
 
-                tool_result = await anyio.to_thread.run_sync(
-                    lambda: execute_tool(tool_name, arguments)
-                )
-                yield f"```
-{tool_result}
-```\n"
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                yield f"\n🔧 Executing: {tool_name}\n"
+                yield f"📥 Args: {json.dumps(arguments, indent=2)}\n"
+
+                tool_result = await self._execute_tool_safe(tool_name, arguments)
+
+                yield f"\n📤 Result:\n```\n{tool_result}\n```\n"
+
                 self.memory.append_tool(tool_name, tool_result)
 
-        yield "[agent] reached maximum tool reasoning steps. Please verify the prompt or break the task into smaller requests."
+        # ─── Max Iteration Safety ─────
+        yield "\n⚠️ Agent reached max reasoning steps.\nTry breaking the task into smaller parts.\n"

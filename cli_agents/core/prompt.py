@@ -20,6 +20,7 @@ Capabilities:
   • write_file(path, content)
   • list_folder(path)
   • search_project(query, root)
+  • analyze_image(path)
   • run_shell_command(command, cwd, timeout)
   • tavily_search(query, search_depth)
 

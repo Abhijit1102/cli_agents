@@ -7,6 +7,7 @@ A Python CLI agent that wraps an OpenAI-powered assistant with local tool execut
 `cli_agents` is a terminal application that lets you interact with an AI agent using natural language. It supports:
 
 - file operations (`read_file`, `write_file`, `list_folder`, `search_project`)
+- image analysis for local files (`analyze_image`)
 - shell command execution (`run_shell_command`)
 - external knowledge lookup via Tavily (`tavily_search`)
 - conversational memory and usage tracking
@@ -27,9 +28,14 @@ A Python CLI agent that wraps an OpenAI-powered assistant with local tool execut
 - `anyio`
 - `openai`
 - `python-dotenv`
+- `Pillow`
 - `rich`
 - `typer`
 - `tavily-python`
+
+Optional:
+
+- `uv` for package installation and environment setup
 
 ## Setup
 
@@ -46,6 +52,13 @@ MODEL=openai/gpt-4o-mini
 
 ```bash
 pip install -r requirements.txt
+```
+
+If you prefer `uv`, install it and use it to install the project dependencies:
+
+```bash
+pip install uv
+uv install
 ```
 
 > If there is no `requirements.txt`, install from `pyproject.toml`:
