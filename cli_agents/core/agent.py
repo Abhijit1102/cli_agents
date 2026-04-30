@@ -28,11 +28,11 @@ class AIController:
         return dict(self.last_usage)
 
     # ───────────────────────────────
-    # Streaming Utility (better UX)
+    # Streaming Utility
     # ───────────────────────────────
 
     async def _stream_text(self, text: str) -> AsyncGenerator[str, None]:
-        for i in range(0, len(text), 4):  # chunked streaming
+        for i in range(0, len(text), 4):
             yield text[i:i + 4]
             await anyio.sleep(0.01)
 
@@ -96,9 +96,7 @@ class AIController:
                 {"command": command, "timeout": 30},
             )
 
-            self.memory.append_user(user_input)
-            self.memory.append_tool("run_shell_command", result)
-
+            # No memory appends here — no model involved, no tool_calls to link against
             yield f"\n🖥 Running command:\n```bash\n{command}\n```\n"
             yield f"```\n{result}\n```\n"
             return
@@ -134,20 +132,21 @@ class AIController:
 
             # ─── Case 1: No tool needed ───
             if not tool_calls:
-                self.memory.append_assistant(assistant_text)
+                self.memory.append_assistant(message)
 
                 async for chunk in self._stream_text(assistant_text):
                     yield chunk
                 return
 
             # ─── Case 2: Tool calls ───────
-            self.memory.append_assistant(assistant_text)
+            self.memory.append_assistant(message)  # full message object, preserves tool_calls
 
             if assistant_text.strip():
                 yield f"\n🤖 {assistant_text}\n"
 
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
+                tool_call_id = tool_call.id  # required to link tool result back
 
                 try:
                     arguments = json.loads(tool_call.function.arguments)
@@ -161,7 +160,7 @@ class AIController:
 
                 yield f"\n📤 Result:\n```\n{tool_result}\n```\n"
 
-                self.memory.append_tool(tool_name, tool_result)
+                self.memory.append_tool(tool_call_id, tool_name, tool_result)
 
         # ─── Max Iteration Safety ─────
         yield "\n⚠️ Agent reached max reasoning steps.\nTry breaking the task into smaller parts.\n"

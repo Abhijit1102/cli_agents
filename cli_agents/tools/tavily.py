@@ -1,5 +1,6 @@
 import json
 import os
+from cli_agents.config import load_env
 
 TAVILY_SEARCH_TOOL = {
     "type": "function",
@@ -23,7 +24,8 @@ TAVILY_SEARCH_TOOL = {
 
 
 def tavily_search(query: str, search_depth: str = "basic") -> str:
-    api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    config = load_env()
+    api_key = config.tavily_api_key
     if not api_key:
         return "Error: TAVILY_API_KEY not configured."
 
