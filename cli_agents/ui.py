@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import anyio
 from typing import Callable, Awaitable, Optional
@@ -17,7 +18,32 @@ from rich.table import Table
 from rich import box
 from rich.markup import escape
 
-console = Console()
+
+def _make_console() -> Console:
+    """Create a Rich console compatible with Git Bash on Windows."""
+    if sys.platform == "win32" and os.getenv("MSYSTEM"):
+        return Console(force_terminal=True, color_system="auto")
+    return Console()
+
+
+def _output_supports_unicode() -> bool:
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        "⚠".encode(encoding)
+        return True
+    except Exception:
+        return False
+
+
+UNICODE_SAFE = _output_supports_unicode()
+WARNING_ICON = "⚠" if UNICODE_SAFE else "!"
+BULLET_ICON = "◆" if UNICODE_SAFE else ">"
+RETRY_ICON = "⟳" if UNICODE_SAFE else "@"
+CROSS_ICON = "✖" if UNICODE_SAFE else "x"
+ELLIPSIS = "…" if UNICODE_SAFE else "..."
+
+
+console = _make_console()
 
 # ── Brand palette (mirrors Claude Code's dark terminal aesthetic) ──────────
 ORANGE   = "bold #FF6B35"
@@ -41,7 +67,14 @@ LOGO = r"""
 """
 
 def _ui_width() -> int:
-    width = console.size.width - 6
+    try:
+        width = console.size.width - 6
+    except Exception:
+        width = 80
+
+    if width <= 0:
+        width = 80
+
     return max(60, min(100, width))
 
 
@@ -72,7 +105,7 @@ def trust_folder_ui():
     print_version_bar()
     console.print()
 
-    warn = Text("  ⚠  SECURITY CHECK  ⚠", style="bold yellow")
+    warn = Text(f"  {WARNING_ICON}  SECURITY CHECK  {WARNING_ICON}", style="bold yellow")
     console.print(Align.center(warn))
     console.print()
 
@@ -102,7 +135,7 @@ def trust_folder_ui():
     if choice == "n":
         console.print()
         console.print(Panel(
-            Text("  ✖  Aborted. Folder not trusted.", style=RED),
+            Text(f"  {CROSS_ICON}  Aborted. Folder not trusted.", style=RED),
             border_style="red",
             box=box.ROUNDED,
             padding=(0, 1),
@@ -113,7 +146,7 @@ def trust_folder_ui():
 
     console.print()
     console.print(Panel(
-        Text("Folder trusted. Starting agent…", style="white"),
+        Text(f"Folder trusted. Starting agent{ELLIPSIS}", style="white"),
         border_style=GREEN,
         box=box.ROUNDED,
         padding=(0, 1),
@@ -180,7 +213,7 @@ def _print_help():
 
 def _stream_response(text: str):
     """Simulate streaming output character-by-character."""
-    prefix = Text(" ◆ ", style=ORANGE_D)
+    prefix = Text(f" {BULLET_ICON} ", style=ORANGE_D)
     console.print(prefix, end="")
 
     delay = max(0.008, min(0.018, 1.0 / max(len(text), 1)))
@@ -191,10 +224,10 @@ def _stream_response(text: str):
     console.print()
 
 
-def _spinner_thinking(label: str = "Thinking…"):
+def _spinner_thinking(label: str = f"Thinking{ELLIPSIS}"):
     """Return a Live spinner context for the 'thinking' state."""
     spinner_text = Text()
-    spinner_text.append(" ◆ ", style=ORANGE_D)
+    spinner_text.append(f" {BULLET_ICON} ", style=ORANGE_D)
     spinner_text.append(label, style=DIM)
     return Live(
         Spinner("dots", text=spinner_text, style=ORANGE_D),
@@ -207,7 +240,7 @@ def _spinner_thinking(label: str = "Thinking…"):
 def _format_tool_use(tool: str, detail: str = ""):
     """Print a tool-use event like Claude Code does."""
     tool_text = Text()
-    tool_text.append("  ⟳ ", style=YELLOW)
+    tool_text.append(f"  {RETRY_ICON} ", style=YELLOW)
     tool_text.append(tool, style=f"bold {YELLOW}")
     if detail:
         tool_text.append(f"  {detail}", style=DIM)
@@ -227,9 +260,9 @@ async def _stream_from_generator(generator):
     Shows a spinner until the first token arrives, then prints tokens as they come.
     """
     width = _ui_width()
-    content = Text()
+    text_buffer = ""
     panel = Panel(
-        content,
+        Text(text_buffer, style="white"),
         title=Text(" assistant ", style="bold cyan"),
         border_style=CYAN,
         box=box.ROUNDED,
@@ -240,7 +273,7 @@ async def _stream_from_generator(generator):
     got_first = False
     with Live(panel, console=console, refresh_per_second=20, transient=False) as live:
         spinner_live = Live(
-            Spinner("dots", text=Text(" ◆  Thinking…", style=ORANGE_D), style=ORANGE_D),
+            Spinner("dots", text=Text(f" {BULLET_ICON}  Thinking{ELLIPSIS}", style=ORANGE_D), style=ORANGE_D),
             console=console,
             refresh_per_second=12,
             transient=True,
@@ -252,9 +285,9 @@ async def _stream_from_generator(generator):
                 if not got_first:
                     got_first = True
                     spinner_live.stop()
-                content.append(token, style="white")
+                text_buffer += str(token)
                 live.update(Panel(
-                    content,
+                    Text(text_buffer, style="white"),
                     title=Text(" assistant ", style="bold cyan"),
                     border_style=CYAN,
                     box=box.ROUNDED,
@@ -312,7 +345,7 @@ async def event_loop_async(on_message=None, agent=None):
 
         # Built-in commands
         if user_input.lower() in ("exit", "quit"):
-            console.print(f"\n  [bold {ORANGE_D}]◆[/bold {ORANGE_D}]  [white]Goodbye[/white] [dim]— session ended[/dim]\n")
+            console.print(f"\n  [bold {ORANGE_D}]{BULLET_ICON}[/bold {ORANGE_D}]  [white]Goodbye[/white] [dim]— session ended[/dim]\n")
             break
 
         if user_input == "/clear":
@@ -381,11 +414,11 @@ async def event_loop_async(on_message=None, agent=None):
             try:
                 await _stream_from_generator(on_message(user_input))
             except Exception as exc:
-                console.print(f"  [bold red]✖  Error:[/bold red] [red]{escape(str(exc))}[/red]\n")
+                console.print(f"  [bold red]{CROSS_ICON}  Error:[/bold red] [red]{escape(str(exc))}[/red]\n")
                 continue
         else:
             # Demo mode — echo with fake latency
-            with _spinner_thinking("Processing…"):
+            with _spinner_thinking(f"Processing{ELLIPSIS}"):
                 await anyio.sleep(0.6)
             _stream_response(f"(echo) {user_input}")
 
