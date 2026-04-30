@@ -1,41 +1,95 @@
 # CLI Agents
 
-This project is a Python-based CLI application designed to facilitate various agent-related tasks. It includes modules for prompts, tools, utilities, and user interface interactions, making it a versatile solution for command-line interface needs.
+A Python CLI agent that wraps an OpenAI-powered assistant with local tool execution and project-aware memory.
 
-## Features
+## Overview
 
-- Modular design with separate components for easy maintenance.
-- Supports customizable prompts and tools to enhance user experience.
-- Utilities for common functionality that can be reused across different parts of the application.
+`cli_agents` is a terminal application that lets you interact with an AI agent using natural language. It supports:
 
-## Initialization
+- file operations (`read_file`, `write_file`, `list_folder`, `search_project`)
+- shell command execution (`run_shell_command`)
+- external knowledge lookup via Tavily (`tavily_search`)
+- conversational memory and usage tracking
+- a trusted folder prompt before enabling file and shell access
 
-Before running the application, ensure to set up the environment variables required for the OpenAI and Tavily APIs. Create a `.env` file in the project root directory with the following content:
+## Project Structure
 
+- `cli_agents/main.py` — Typer-based CLI entrypoint and application startup.
+- `cli_agents/config/settings.py` — environment loading and application configuration.
+- `cli_agents/core/agent.py` — AI controller that manages LLM calls and tool execution.
+- `cli_agents/ui/app.py` — Rich-powered terminal UI and command loop.
+- `cli_agents/memory/history.py` — conversation history and message assembly.
+- `cli_agents/tools/` — tool definitions for project inspection and shell execution.
+
+## Requirements
+
+- Python 3.12+
+- `anyio`
+- `openai`
+- `python-dotenv`
+- `rich`
+- `typer`
+- `tavily-python`
+
+## Setup
+
+1. Create a `.env` file in the project root:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_BASE_URL=https://api.openai.com/v1
+TAVILY_API_KEY=your_tavily_api_key
+MODEL=openai/gpt-4o-mini
 ```
-OPENAI_API_KEY=<your_openai_api_key>
-OPENAI_BASE_URL=<your_openai_base_url>
-TAVILY_API_KEY=<your_tavily_api_key>
-```
 
-Replace `<your_openai_api_key>`, `<your_openai_base_url>`, and `<your_tavily_api_key>` with your actual keys.
-
-Install the Tavily client dependency with:
+2. Install dependencies:
 
 ```bash
-pip install tavily-python
+pip install -r requirements.txt
 ```
 
-## Usage
-
-To run the application, execute:
+> If there is no `requirements.txt`, install from `pyproject.toml`:
 
 ```bash
-python cli_agents/main.py start
+pip install .
 ```
 
-Once the application starts, you can input commands. The history can be reset at any time by typing `/reset`. The application utilizes asynchronous messaging and tool execution to provide a dynamic command-line interface experience.
+## Run
+
+Start the CLI agent with:
+
+```bash
+python -m cli_agents.main start
+```
+
+Or if the package is installed as a script:
+
+```bash
+cli_agents start
+```
+
+## Available Commands
+
+Inside the CLI session, use:
+
+- `/help` — show built-in commands
+- `/reset` — reset conversation history
+- `/usage` — show the last LLM usage stats
+- `/cwd` — print current working directory
+- `/clear` — clear the screen
+- `exit` / `quit` — exit the session
+
+## Security
+
+On startup, the app prompts "Trust this folder and enable file/shell access?". If you decline, the agent exits immediately.
+
+## Notes
+
+- `OPENAI_API_KEY` is required.
+- `OPENAI_BASE_URL` is optional; omit it for the default OpenAI endpoint.
+- `TAVILY_API_KEY` is optional, but required for Tavily-based searches.
+- Default model is `openai/gpt-4o-mini` unless overridden by the `MODEL` environment variable.
 
 ## Contributing
 
-Feel free to submit issues and pull requests to help improve the project.
+Contributions are welcome. Open an issue or submit a pull request for improvements, bug fixes, or new tool integrations.

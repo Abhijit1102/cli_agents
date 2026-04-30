@@ -1,54 +1,21 @@
-import os
 import typer
 import anyio
-from pathlib import Path
-from dotenv import load_dotenv
 
-from cli_agents.ui import trust_folder_ui, event_loop_async
-from cli_agents.prompt import generate_system_prompt
-from cli_agents.chat import ChatAgent
+from cli_agents.config import load_env
+from cli_agents.core import AIController, generate_system_prompt
+from cli_agents.memory import ConversationMemory
+from cli_agents.ui import ChatUI, trust_folder_ui
 
 app = typer.Typer(add_completion=False, help="CLI Agent powered by OpenAI")
 
-# ── CONFIG ───────────────────────────────────────────────────────────────
-DEFAULT_MODEL = "openai/gpt-4o-mini"
-
-
-def load_env():
-    possible_paths = [
-        Path.cwd() / ".env",
-        Path(__file__).resolve().parent / ".env",
-        Path(__file__).resolve().parent.parent / ".env",
-    ]
-
-    for path in possible_paths:
-        if path.exists():
-            load_dotenv(path)
-            print(f"✅ Loaded .env from: {path}")
-            return
-
-    print("⚠️ No .env file found. Using system environment variables.")
 
 
 # ── CLI COMMAND ──────────────────────────────────────────────────────────
 @app.command()
-def start():
-    """Start CLI Agent"""
+def start() -> None:
+    """Start the enhanced CLI agent."""
     trust_folder_ui()
-    load_env()
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL")
-
-    if not api_key:
-        typer.echo("\n❌ OPENAI_API_KEY not found.\n")
-        typer.echo("👉 Fix it using ONE of these:\n")
-        typer.echo("1. Create a .env file in the project root:")
-        typer.echo("   OPENAI_API_KEY=your-key")
-        typer.echo("2. Or set it globally on Windows CMD:")
-        typer.echo("   setx OPENAI_API_KEY your-key")
-        typer.echo("   restart the terminal after using setx")
-        raise typer.Exit(1)
+    config = load_env()
 
     try:
         from openai import AsyncOpenAI
@@ -58,23 +25,16 @@ def start():
         raise typer.Exit(1)
 
     client = AsyncOpenAI(
-        api_key=api_key,
-        base_url=base_url or None,
+        api_key=config.openai_api_key,
+        base_url=config.openai_base_url,
     )
 
-    model = os.getenv("MODEL", DEFAULT_MODEL)
+    memory = ConversationMemory(system_prompt=generate_system_prompt(config.project_root))
+    agent = AIController(client=client, config=config, memory=memory)
+    ui = ChatUI(agent=agent)
 
-    agent = ChatAgent(
-        client=client,
-        system_prompt=generate_system_prompt(),
-        model=model,
-    )
+    anyio.run(ui.run)
 
-    async def on_message(user_input: str):
-        async for chunk in agent.handle_message(user_input):
-            yield chunk
-
-    anyio.run(event_loop_async, on_message, agent)
 
 
 # ── ENTRY POINT ──────────────────────────────────────────────────────────
