@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from pathlib import Path
@@ -79,6 +80,25 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "tavily_search",
+            "description": "Search the Tavily API for query results",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query text"},
+                    "search_depth": {
+                        "type": "string",
+                        "description": "Search depth preset",
+                        "enum": ["ultra-fast", "fast", "basic", "advanced"],
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_folder",
             "description": "List files and folders inside a directory",
             "parameters": {
@@ -126,6 +146,28 @@ def execute_tool(name: str, args: dict) -> str:
                 return f"Error: folder not found: {p}"
             shutil.rmtree(p)
             return f"✔ Deleted folder: {p}"
+
+        elif name == "tavily_search":
+            api_key = os.getenv("TAVILY_API_KEY")
+            if not api_key:
+                return "Error: TAVILY_API_KEY not found in environment. Set it in .env or system environment."
+
+            try:
+                from tavily import TavilyClient
+            except ImportError:
+                return "Error: missing dependency tavily-python. Install with: pip install tavily-python"
+
+            query = args.get("query", "")
+            search_depth = args.get("search_depth", "basic")
+            try:
+                client = TavilyClient(api_key)
+                response = client.search(query=query, search_depth=search_depth)
+            except Exception as e:
+                return f"Error: {e}"
+
+            if isinstance(response, dict):
+                return json.dumps(response, indent=2)
+            return str(response)
 
         elif name == "list_folder":
             p = Path(args["path"])

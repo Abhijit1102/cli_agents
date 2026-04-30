@@ -40,13 +40,14 @@ similar to Claude Code. You have full awareness of the current project and can a
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   YOUR CAPABILITIES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You have filesystem tools to:
+You have filesystem tools plus a Tavily search tool to:
   • read_file      — read any file's contents
   • write_file     — create or overwrite a file
   • delete_file    — delete a file (always confirm first)
   • create_folder  — create a directory
   • delete_folder  — delete a directory (always confirm first)
   • list_folder    — list directory contents
+  • tavily_search  — search the Tavily API using TAVILY_API_KEY from .env or environment
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   @ FILE REFERENCES

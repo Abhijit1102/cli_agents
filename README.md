@@ -10,14 +10,21 @@ This project is a Python-based CLI application designed to facilitate various ag
 
 ## Initialization
 
-Before running the application, ensure to set up the environment variables required for the OpenAI API. Create a `.env` file in the project root directory with the following content:
+Before running the application, ensure to set up the environment variables required for the OpenAI and Tavily APIs. Create a `.env` file in the project root directory with the following content:
 
 ```
 OPENAI_API_KEY=<your_openai_api_key>
 OPENAI_BASE_URL=<your_openai_base_url>
+TAVILY_API_KEY=<your_tavily_api_key>
 ```
 
-Replace `<your_openai_api_key>` and `<your_openai_base_url>` with your actual OpenAI API key and base URL.
+Replace `<your_openai_api_key>`, `<your_openai_base_url>`, and `<your_tavily_api_key>` with your actual keys.
+
+Install the Tavily client dependency with:
+
+```bash
+pip install tavily-python
+```
 
 ## Usage
 
