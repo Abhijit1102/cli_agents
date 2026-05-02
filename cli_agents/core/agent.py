@@ -34,21 +34,20 @@ class AIController:
     async def _execute_tool_safe(self, tool_name: str, arguments: dict) -> str:
         try:
             result = await anyio.to_thread.run_sync(
-                lambda: execute_tool(tool_name, arguments)
+                lambda: execute_tool(tool_name, arguments, self.config)  # ✅ FIXED
             )
             return str(result)
         except Exception as e:
             return f"[Tool Error: {tool_name}] {str(e)}"
 
     # ───────────────────────────────
-    # Main Loop (NON-STREAMING)
+    # Main Loop
     # ───────────────────────────────
 
     async def handle_message(self, user_input: str) -> AsyncGenerator[str, None]:
         if not user_input.strip():
             return
 
-        # Commands
         if user_input.strip() == "/reset":
             yield self.reset()
             return
@@ -66,8 +65,7 @@ class AIController:
                     tool_choice="auto",
                 )
             except Exception as exc:
-                error = f"[API Error] {exc}"
-                yield error
+                yield f"[API Error] {exc}"
                 return
 
             await self._record_usage(response)
@@ -76,7 +74,7 @@ class AIController:
             tool_calls = getattr(message, "tool_calls", None)
             assistant_text = message.content or ""
 
-            # ─── No tool ───
+            # ─── No tool call ───
             if not tool_calls:
                 self.memory.append_assistant(message)
                 yield assistant_text

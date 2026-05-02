@@ -1,7 +1,6 @@
 import json
 from cli_agents.config import AppConfig
 
-
 TAVILY_SEARCH_TOOL = {
     "type": "function",
     "function": {
