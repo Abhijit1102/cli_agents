@@ -1,9 +1,17 @@
 import json
+import base64
+import mimetypes
+from openai import OpenAI
 from pathlib import Path
 from typing import List
 
 from cli_agents.utils import should_ignore
+from cli_agents.config import load_env
 
+config = load_env()
+client = OpenAI(api_key=config.openai_api_key)
+
+SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 READ_FILE_TOOL = {
     "type": "function",
@@ -71,11 +79,17 @@ ANALYZE_IMAGE_TOOL = {
     "type": "function",
     "function": {
         "name": "analyze_image",
-        "description": "Analyze an image file and return metadata, dimensions, format, and basic structure details.",
+        "description": (
+            "Analyze an image using AI. Supports PNG, JPEG, GIF, and WebP. "
+            "Returns description, objects, text, and scene understanding."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Image file path to analyze."},
+                "path": {
+                    "type": "string",
+                    "description": "Image file path to analyze (PNG, JPEG, GIF, or WebP).",
+                }
             },
             "required": ["path"],
         },
@@ -150,50 +164,49 @@ def search_project(query: str, root: str | None = None) -> str:
 
 def analyze_image(path: str) -> str:
     target = Path(path)
+
     if not target.exists():
         return f"Error: file not found: {target}"
-    if not target.is_file():
-        return f"Error: path is not a file: {target}"
+
+    # Detect MIME type from file extension
+    mime_type, _ = mimetypes.guess_type(str(target))
+
+    if mime_type is None:
+        return f"Error: could not determine file type for: {target.name}"
+
+    if mime_type not in SUPPORTED_IMAGE_TYPES:
+        return (
+            f"Error: unsupported image type '{mime_type}' for file: {target.name}. "
+            f"Supported types: PNG, JPEG, GIF, WebP."
+        )
 
     try:
-        from PIL import Image
-    except ImportError:
-        return "Error: missing dependency Pillow. Install with: pip install Pillow"
+        with open(target, "rb") as img_file:
+            base64_image = base64.b64encode(img_file.read()).decode("utf-8")
 
-    try:
-        if target.suffix.lower() in {".svg", ".svgz"}:
-            text = target.read_text(encoding="utf-8", errors="replace")
-            shapes = text.count("<path") + text.count("<rect") + text.count("<circle") + text.count("<line")
-            return (
-                f"format: SVG\n"
-                f"size: {target.stat().st_size} bytes\n"
-                f"element counts: paths={text.count('<path')}, rects={text.count('<rect')}, circles={text.count('<circle')}, lines={text.count('<line')}\n"
-                f"shape summary: {shapes} vector elements"
-            )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Analyze this image in detail. Describe objects, scene, and any text.",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=500,
+        )
 
-        with Image.open(target) as image:
-            info = image.info or {}
-            frames = getattr(image, "n_frames", 1)
-            metadata_lines = [
-                f"format: {image.format}",
-                f"size: {image.width}x{image.height}",
-                f"mode: {image.mode}",
-                f"frames: {frames}",
-            ]
+        return response.choices[0].message.content
 
-            if info:
-                metadata_lines.append(f"info: {json.dumps(info, default=str, indent=2)}")
-
-            if image.mode == "P" and image.palette:
-                metadata_lines.append(f"palette mode: {image.palette.mode}")
-
-            try:
-                exif_data = image._getexif() or {}
-                if exif_data:
-                    metadata_lines.append(f"exif: {json.dumps({str(k): str(v) for k, v in exif_data.items()}, indent=2)}")
-            except Exception:
-                pass
-
-            return "\n".join(metadata_lines)
-    except Exception as exc:
-        return f"Error analyzing image: {exc}"
+    except Exception as e:
+        return f"Error analyzing image with AI: {e}"

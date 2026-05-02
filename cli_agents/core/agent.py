@@ -16,7 +16,7 @@ class AIController:
         self.last_usage: Dict = {}
 
     # ───────────────────────────────
-    # Public Helpers
+    # Helpers
     # ───────────────────────────────
 
     def reset(self) -> str:
@@ -27,42 +27,9 @@ class AIController:
     def get_last_usage(self) -> dict:
         return dict(self.last_usage)
 
-    # ───────────────────────────────
-    # Streaming Utility
-    # ───────────────────────────────
-
-    async def _stream_text(self, text: str) -> AsyncGenerator[str, None]:
-        for i in range(0, len(text), 4):
-            yield text[i:i + 4]
-            await anyio.sleep(0.01)
-
-    # ───────────────────────────────
-    # Usage Tracking
-    # ───────────────────────────────
-
     async def _record_usage(self, response) -> None:
         usage = getattr(response, "usage", None)
-
-        if usage is None:
-            self.last_usage = {}
-            return
-
-        if isinstance(usage, dict):
-            self.last_usage = usage
-            return
-
-        try:
-            self.last_usage = dict(usage)
-        except Exception:
-            self.last_usage = {
-                k: getattr(usage, k)
-                for k in dir(usage)
-                if not k.startswith("_")
-            }
-
-    # ───────────────────────────────
-    # Safe Tool Execution
-    # ───────────────────────────────
+        self.last_usage = dict(usage) if usage else {}
 
     async def _execute_tool_safe(self, tool_name: str, arguments: dict) -> str:
         try:
@@ -71,56 +38,35 @@ class AIController:
             )
             return str(result)
         except Exception as e:
-            return f"[Tool Error] {str(e)}"
+            return f"[Tool Error: {tool_name}] {str(e)}"
 
     # ───────────────────────────────
-    # Core Agent Loop
+    # Main Loop (NON-STREAMING)
     # ───────────────────────────────
 
     async def handle_message(self, user_input: str) -> AsyncGenerator[str, None]:
-        normalized = user_input.strip()
-
-        if not normalized:
+        if not user_input.strip():
             return
 
-        # ─── Commands ─────────────────
-        if normalized == "/reset":
+        # Commands
+        if user_input.strip() == "/reset":
             yield self.reset()
             return
 
-        if normalized.startswith("/run "):
-            command = normalized[5:].strip()
-
-            result = await self._execute_tool_safe(
-                "run_shell_command",
-                {"command": command, "timeout": 30},
-            )
-
-            # No memory appends here — no model involved, no tool_calls to link against
-            yield f"\n🖥 Running command:\n```bash\n{command}\n```\n"
-            yield f"```\n{result}\n```\n"
-            return
-
-        # ─── Normal Chat Flow ─────────
         self.memory.append_user(user_input)
 
         max_iterations = 4
-        iteration = 0
 
-        while iteration < max_iterations:
-            iteration += 1
-
+        for _ in range(max_iterations):
             try:
                 response = await self.client.chat.completions.create(
                     model=self.config.model,
                     messages=self.memory.get_messages(),
                     tools=self.tools,
                     tool_choice="auto",
-                    stream=False,
                 )
             except Exception as exc:
                 error = f"[API Error] {exc}"
-                self.memory.append_assistant(error)
                 yield error
                 return
 
@@ -130,37 +76,32 @@ class AIController:
             tool_calls = getattr(message, "tool_calls", None)
             assistant_text = message.content or ""
 
-            # ─── Case 1: No tool needed ───
+            # ─── No tool ───
             if not tool_calls:
                 self.memory.append_assistant(message)
-
-                async for chunk in self._stream_text(assistant_text):
-                    yield chunk
+                yield assistant_text
                 return
 
-            # ─── Case 2: Tool calls ───────
-            self.memory.append_assistant(message)  # full message object, preserves tool_calls
+            # ─── Tool execution ───
+            self.memory.append_assistant(message)
 
             if assistant_text.strip():
                 yield f"\n🤖 {assistant_text}\n"
 
             for tool_call in tool_calls:
-                tool_name = tool_call.function.name
-                tool_call_id = tool_call.id  # required to link tool result back
+                name = tool_call.function.name
 
                 try:
-                    arguments = json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError:
-                    arguments = {}
+                    args = json.loads(tool_call.function.arguments)
+                except:
+                    args = {}
 
-                yield f"\n🔧 Executing: {tool_name}\n"
-                yield f"📥 Args: {json.dumps(arguments, indent=2)}\n"
+                yield f"\n🔧 Executing: {name}\n"
 
-                tool_result = await self._execute_tool_safe(tool_name, arguments)
+                result = await self._execute_tool_safe(name, args)
 
-                yield f"\n📤 Result:\n```\n{tool_result}\n```\n"
+                yield f"```\n{result}\n```\n"
 
-                self.memory.append_tool(tool_call_id, tool_name, tool_result)
+                self.memory.append_tool(tool_call.id, name, result)
 
-        # ─── Max Iteration Safety ─────
-        yield "\n⚠️ Agent reached max reasoning steps.\nTry breaking the task into smaller parts.\n"
+        yield "\n⚠️ Max reasoning steps reached.\n"

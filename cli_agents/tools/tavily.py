@@ -1,6 +1,6 @@
 import json
-import os
-from cli_agents.config import load_env
+from cli_agents.config import AppConfig
+
 
 TAVILY_SEARCH_TOOL = {
     "type": "function",
@@ -10,10 +10,9 @@ TAVILY_SEARCH_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search query text."},
+                "query": {"type": "string"},
                 "search_depth": {
                     "type": "string",
-                    "description": "Tavily search depth preset.",
                     "enum": ["ultra-fast", "fast", "basic", "advanced"],
                 },
             },
@@ -23,16 +22,16 @@ TAVILY_SEARCH_TOOL = {
 }
 
 
-def tavily_search(query: str, search_depth: str = "basic") -> str:
-    config = load_env()
+def tavily_search(query: str, config: AppConfig, search_depth: str = "basic") -> str:
     api_key = config.tavily_api_key
+
     if not api_key:
         return "Error: TAVILY_API_KEY not configured."
 
     try:
         from tavily import TavilyClient
     except ImportError:
-        return "Error: missing dependency tavily-python. Install with: pip install tavily-python"
+        return "Error: missing dependency tavily-python."
 
     try:
         client = TavilyClient(api_key)
@@ -40,6 +39,4 @@ def tavily_search(query: str, search_depth: str = "basic") -> str:
     except Exception as exc:
         return f"Error: {exc}"
 
-    if isinstance(response, dict):
-        return json.dumps(response, indent=2)
-    return str(response)
+    return json.dumps(response, indent=2)

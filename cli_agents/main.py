@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 import typer
 import anyio
 
@@ -6,37 +9,43 @@ from cli_agents.core import AIController, generate_system_prompt
 from cli_agents.memory import ConversationMemory
 from cli_agents.ui import ChatUI, trust_folder_ui
 
-app = typer.Typer(add_completion=False, help="CLI Agent powered by OpenAI")
+app = typer.Typer()
 
 
-
-# ── CLI COMMAND ──────────────────────────────────────────────────────────
 @app.command()
-def start() -> None:
-    """Start the enhanced CLI agent."""
+def start(
+    path: Path = typer.Argument(
+        default=None,
+        help="Project root directory (defaults to current directory)",
+    )
+):
+    project_root = (path or Path(os.getcwd())).resolve()
+    print(">>> CWD AT START:", project_root)
+    
     trust_folder_ui()
-    config = load_env()
+    
+    print(">>> CWD AFTER TRUST:", Path(os.getcwd()).resolve())
 
-    try:
-        from openai import AsyncOpenAI
-    except ImportError:
-        typer.echo("\n❌ Missing dependency: openai\n")
-        typer.echo("👉 Install with: pip install openai\n")
-        raise typer.Exit(1)
+    config = load_env(project_root=project_root)
+    
+    print(">>> CONFIG ROOT:", config.project_root)
+
+    from openai import AsyncOpenAI
 
     client = AsyncOpenAI(
         api_key=config.openai_api_key,
         base_url=config.openai_base_url,
     )
 
-    memory = ConversationMemory(system_prompt=generate_system_prompt(config.project_root))
-    agent = AIController(client=client, config=config, memory=memory)
-    ui = ChatUI(agent=agent)
+    memory = ConversationMemory(
+        system_prompt=generate_system_prompt(config.project_root)
+    )
+
+    agent = AIController(client, config, memory)
+    ui = ChatUI(agent)
 
     anyio.run(ui.run)
 
 
-
-# ── ENTRY POINT ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app()
