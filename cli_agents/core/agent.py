@@ -88,17 +88,19 @@ class AIController:
 
             for tool_call in tool_calls:
                 name = tool_call.function.name
-
                 try:
                     args = json.loads(tool_call.function.arguments)
                 except:
                     args = {}
 
-                yield f"\n🔧 Executing: {name}\n"
+                # ── Signal tool start (picked up by ChatUI Live block) ──
+                args_preview = ", ".join(f"{k}={str(v)[:40]}" for k, v in args.items())
+                yield f"\x00TOOL_START:{name}:{args_preview}"
 
                 result = await self._execute_tool_safe(name, args)
 
-                yield f"```\n{result}\n```\n"
+                # ── Signal tool done ────────────────────────────────────
+                yield f"\x00TOOL_DONE:{name}"
 
                 self.memory.append_tool(tool_call.id, name, result)
 
