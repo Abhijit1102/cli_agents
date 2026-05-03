@@ -90,6 +90,8 @@ Inside the CLI session, use:
 - `/usage` — show the last LLM usage stats
 - `/cwd` — print current working directory
 - `/clear` — clear the screen
+- `/theme` — list available themes
+- `/theme <name>` — switch active theme instantly, e.g. `/theme purple`
 - `exit` / `quit` — exit the session
 
 ## Security
@@ -117,5 +119,5 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+out of or in connection with the Software or the use or other dealings in the
+Software.
