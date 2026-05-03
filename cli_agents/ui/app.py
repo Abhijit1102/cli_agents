@@ -458,11 +458,7 @@ class ChatUI:
         home = os.path.expanduser("~")
         if cwd.startswith(home):
             cwd = "~" + cwd[len(home):]
-
-        time_str = datetime.now(local_tz).strftime("%H:%M")
-
         return (
-            f"[dim {D()}]{time_str}[/dim {D()}] "
             f"[bold {S()}]{user}@{host}[/bold {S()}]:"
             f"[bold {P()}]{cwd}[/bold {P()}]$ "
         )
