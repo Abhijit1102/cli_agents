@@ -19,7 +19,6 @@ class AgentStatusRenderer:
         self.tool_args: Optional[str] = None
         self.completed_tools: List[str] = []
 
-    # ── state mutators ────────────────────────
     def set_thinking(self) -> None:
         self.phase     = "thinking"
         self.tool_name = None
@@ -38,7 +37,6 @@ class AgentStatusRenderer:
     def set_done(self) -> None:
         self.phase = "done"
 
-    # ── Rich protocol ─────────────────────────
     def __rich__(self) -> Panel:
         rows = []
 
@@ -52,7 +50,7 @@ class AgentStatusRenderer:
             rows.append(
                 Status(
                     "[bold yellow]🚀 thinking • evaluating • deciding…[/bold yellow]",
-                    spinner="line"
+                    spinner="line",
                 )
             )
         elif self.phase == "tool":
@@ -60,7 +58,7 @@ class AgentStatusRenderer:
             tool_line.append("  ⚙  executing  ", style=f"bold {W()}")
             tool_line.append(self.tool_name or "?", style=f"bold black on {W()}")
             if self.tool_args:
-                tool_line.append(f"🧾 args  {self.tool_args}", style=f"dim {P()}")
+                tool_line.append(f"  🧾 args  {self.tool_args}", style=f"dim {P()}")
             rows.append(Spinner("point", text=tool_line))
         elif self.phase == "done":
             rows.append(Text("  ✔  finished", style=f"bold {S()}"))

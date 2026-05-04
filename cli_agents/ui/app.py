@@ -1,20 +1,14 @@
 """
 app.py — ChatUI (orchestration layer)
-
-Only change from the original: the blocking Prompt.ask() call inside
-run() is replaced with ask_with_palette(), which gives the slash-command
-palette (↑ ↓ arrow navigation, fuzzy filtering, Enter to select).
 """
 
 import os
 import time
-import json
 from datetime import datetime
 from typing import List
 
 import anyio
 from rich import box
-from rich.syntax import Syntax
 from rich.columns import Columns
 from rich.live import Live
 from rich.markdown import Markdown
@@ -24,13 +18,12 @@ from rich.text import Text
 
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
+from .diff_renderer import render_git_diff          # ← clean import
 from cli_agents.sandbox import handle_sandbox_command
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
-from .slash_commands import ask_with_palette   # ← palette swap
+from .slash_commands import ask_with_palette
 
-# Sentinel prefix used to carry diff payloads between agent and UI.
-# Must match exactly what AIController yields.
 _DIFF_PREFIX = "\x00DIFF_RESULT:"
 
 
@@ -40,7 +33,7 @@ class ChatUI:
         self.console = CONSOLE
         self.history: List[str] = []
 
-    # ── shared helpers ────────────────────────
+    # ── shared helpers ────────────────────────────────────────────────────────
     def _ts_row(self, label: str) -> Table:
         h = Table.grid(expand=True)
         h.add_column(ratio=1); h.add_column(justify="right")
@@ -53,12 +46,12 @@ class ChatUI:
             t.add_row(r)
         return t
 
-    # ── renders ───────────────────────────────
+    # ── renders ───────────────────────────────────────────────────────────────
     def _render_header(self) -> None:
         left  = Text.assemble(("🚀 AI CONTROLLER ACTIVE", f"bold {P()}"))
         right = Text.assemble(
-            ("Type ",    f"dim {D()}"),
-            ("/help",    f"bold {P()}"),
+            ("Type ",         f"dim {D()}"),
+            ("/help",         f"bold {P()}"),
             (" for commands", f"italic dim {D()}"),
         )
         header = Table.grid(expand=True)
@@ -151,7 +144,7 @@ class ChatUI:
         with Live(LiveClock(), console=self.console, refresh_per_second=10, transient=True):
             time.sleep(duration)
 
-    # ── /theme handler ────────────────────────
+    # ── /theme handler ────────────────────────────────────────────────────────
     def _handle_theme(self, cmd: str) -> None:
         parts = cmd.strip().split()
         if len(parts) == 1:
@@ -167,7 +160,7 @@ class ChatUI:
         self._render_header()
         self._render_system(f"Theme changed to: {name}", S())
 
-    # ── prompt label ─────────────────────────
+    # ── prompt label ──────────────────────────────────────────────────────────
     def _get_prompt_label(self) -> str:
         user = os.getenv("USERNAME") or os.getenv("USER") or "user"
         host = os.uname().nodename if hasattr(os, "uname") else "localhost"
@@ -180,65 +173,7 @@ class ChatUI:
             f"[bold {P()}]{cwd}[/bold {P()}]$ "
         )
 
-    def render_git_diff(self, diff_json: str) -> None:
-        """
-        Parses the JSON payload from the git_diff tool and renders 
-        a colorized, formatted panel to the console.
-        """
-        try:
-            # 1. Parse the JSON
-            if not diff_json or not diff_json.strip():
-                self._render_system("Received empty diff payload.", A())
-                return
-
-            data = json.loads(diff_json)
-
-            # 2. Check for Tool-level Errors
-            # This handles cases where the tool returned JSON but contains an error message
-            if data.get("error"):
-                self._render_system(f"Diff Tool Error: {data['error']}", A())
-                return
-
-            diff_text = data.get("diff", "")
-            added = data.get("added", 0)
-            removed = data.get("removed", 0)
-
-            # 3. Handle No Changes Case
-            if not diff_text:
-                self._render_system("No changes detected between versions.", S())
-                return
-
-            # 4. Create the Rich Panel
-            # Using 'diff' syntax highlighter and a clear title with stats
-            panel = Panel(
-                Syntax(
-                    diff_text, 
-                    "diff", 
-                    theme="monokai", 
-                    line_numbers=True, 
-                    word_wrap=True
-                ),
-                title=f"[bold cyan]GIT DIFF[/bold cyan] [white](+{added} / -{removed})[/white]",
-                title_align="left",
-                border_style="cyan",
-                padding=(0, 1),
-                box=box.ROUNDED
-            )
-
-            # 5. Print to Console
-            self.console.print(panel)
-
-        except json.JSONDecodeError:
-            # This catches the "Expecting value" error by falling back to raw text
-            self._render_system(
-                f"Failed to parse Diff JSON. Raw Output:\n{diff_json}", 
-                A()
-            )
-        except Exception as e:
-            # General safety catch
-            self._render_system(f"UI Rendering Error: {str(e)}", A())
-
-    # ── agent runner ─────────────────────────
+    # ── agent runner ──────────────────────────────────────────────────────────
     async def _run_with_live_status(self, cmd: str) -> str:
         renderer = AgentStatusRenderer()
         content_parts: List[str] = []
@@ -263,13 +198,17 @@ class ChatUI:
 
             renderer.set_done()
 
-        # Render diffs outside the Live block so Rich doesn't fight itself
-        for diff in diff_outputs:
-            self.render_git_diff(diff)
+        # Render diffs outside the Live block — delegates to diff_renderer.py
+        for diff_json in diff_outputs:
+            render_git_diff(
+                diff_json,
+                console=self.console,
+                render_system_fn=self._render_system,   # pass error handler in
+            )
 
         return "".join(content_parts)
 
-    # ── main loop ────────────────────────────
+    # ── main loop ─────────────────────────────────────────────────────────────
     async def run(self) -> None:
         self.console.clear()
         self._render_header()
@@ -277,7 +216,6 @@ class ChatUI:
 
         while True:
             try:
-                # ↓ palette-aware prompt — type "/" to open command menu
                 user_input = await anyio.to_thread.run_sync(
                     lambda: ask_with_palette(self._get_prompt_label())
                 )
@@ -319,7 +257,7 @@ class ChatUI:
             if cmd.startswith("/sandbox"):
                 suffix = cmd[len("/sandbox"):].strip()
                 handle_sandbox_command(self, suffix)
-                continue    
+                continue
 
             self._render_user(cmd)
             self.history.append(cmd)

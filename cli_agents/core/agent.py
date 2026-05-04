@@ -15,10 +15,6 @@ class AIController:
         self.tools = TOOLS
         self.last_usage: Dict = {}
 
-    # ───────────────────────────────
-    # Helpers
-    # ───────────────────────────────
-
     def reset(self) -> str:
         self.memory.reset()
         self.last_usage = {}
@@ -34,17 +30,25 @@ class AIController:
     async def _execute_tool_safe(self, tool_name: str, arguments: dict) -> str:
         try:
             result = await anyio.to_thread.run_sync(
-                lambda: execute_tool(tool_name, arguments, self.config)  # ✅ FIXED
+                lambda: execute_tool(tool_name, arguments, self.config)
             )
             return str(result)
         except Exception as e:
             return f"[Tool Error: {tool_name}] {str(e)}"
 
-    # ───────────────────────────────
-    # Main Loop
-    # ───────────────────────────────
+    # ── MAIN LOOP ────────────────────────────────────────────────────────────
+    async def handle_message(
+        self,
+        user_input: str,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Yields three kinds of chunks that ChatUI understands:
 
-    async def handle_message(self, user_input: str) -> AsyncGenerator[str, None]:
+        1. "\x00TOOL_START:<name>:<json_args>"  — tool is about to run
+        2. "\x00TOOL_DONE:<name>"               — tool finished
+        3. "\x00DIFF_RESULT:<json>"             — git diff payload
+        4. plain text                            — assistant prose
+        """
         if not user_input.strip():
             return
 
@@ -54,6 +58,7 @@ class AIController:
 
         self.memory.append_user(user_input)
 
+        _DIFF_PREFIX = "\x00DIFF_RESULT:"
         max_iterations = 4
 
         for _ in range(max_iterations):
@@ -74,13 +79,13 @@ class AIController:
             tool_calls = getattr(message, "tool_calls", None)
             assistant_text = message.content or ""
 
-            # ─── No tool call ───
+            # ── NO TOOL CALLS ────────────────────────────────────────────────
             if not tool_calls:
                 self.memory.append_assistant(message)
                 yield assistant_text
                 return
 
-            # ─── Tool execution ───
+            # ── TOOL CALLS ───────────────────────────────────────────────────
             self.memory.append_assistant(message)
 
             if assistant_text.strip():
@@ -91,18 +96,22 @@ class AIController:
                 args_raw = tool_call.function.arguments
 
                 try:
-                    args = json.loads(args_raw, strict=False)
-                except Exception as e:
-                    print("JSON parse failed:", e)
+                    args = json.loads(args_raw or "{}")
+                except Exception:
                     args = {}
 
+                # Signal UI: tool is starting
+                args_str = json.dumps(args, ensure_ascii=False)
+                yield f"\x00TOOL_START:{name}:{args_str}"
 
+                # Run the tool
                 result = await self._execute_tool_safe(name, args)
 
-                # ── Signal tool done ────────────────────────────────────
-                if name in {"git_diff", "code_diff", "file_diff"}:
-                    yield f"\x00DIFF_RESULT:{result}"
-    
+                # Special case: git_diff result gets its own sentinel
+                if name == "git_diff":
+                    yield f"{_DIFF_PREFIX}{result}"
+
+                # Signal UI: tool finished
                 yield f"\x00TOOL_DONE:{name}"
 
                 self.memory.append_tool(tool_call.id, name, result)
