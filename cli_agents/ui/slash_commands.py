@@ -38,6 +38,7 @@ COMMANDS: List[SlashCommand] = [
     SlashCommand("theme orange", "Switch to orange theme", aliases=["orange"]),
     SlashCommand("theme pink", "Switch to pink theme", aliases=["pink"]),
     SlashCommand("theme white", "Switch to white theme", aliases=["white"]),
+    SlashCommand("config", "Display current MODEL and environment (.env) settings used by CLI_agents")
 
     SlashCommand(
         "sandbox",

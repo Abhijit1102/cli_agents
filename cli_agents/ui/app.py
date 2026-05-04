@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from cli_agents.config.global_config import get_config
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
 from .diff_renderer import render_git_diff          # ← clean import
@@ -258,6 +259,15 @@ class ChatUI:
                 suffix = cmd[len("/sandbox"):].strip()
                 handle_sandbox_command(self, suffix)
                 continue
+            if cmd == "/config":
+                cfg = self.agent.config
+                msg = f"""
+            Model: {cfg.model}
+            Base URL: {cfg.openai_base_url or "default"}
+            Tavily: {"enabled" if cfg.tavily_api_key else "disabled"}
+            """
+                self._render_system(msg.strip(), P())
+                continue    
 
             self._render_user(cmd)
             self.history.append(cmd)

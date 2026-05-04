@@ -1,3 +1,3 @@
-from .settings import AppConfig, load_env
+from .settings import AppConfig, load_config
 
-__all__ = ["AppConfig", "load_env"]
+__all__ = ["AppConfig", "load_config"]

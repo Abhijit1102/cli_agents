@@ -4,7 +4,8 @@ from pathlib import Path
 import typer
 import anyio
 
-from cli_agents.config import load_env
+from cli_agents.config.global_config import set_config
+from cli_agents.config import load_config
 from cli_agents.core import AIController, generate_system_prompt
 from cli_agents.memory import ConversationMemory
 from cli_agents.ui import ChatUI, trust_folder_ui
@@ -26,7 +27,8 @@ def start(
     
     print(">>> CWD AFTER TRUST:", Path(os.getcwd()).resolve())
 
-    config = load_env(project_root=project_root)
+    config = load_config(project_root=project_root)
+    set_config(config)
     
     print(">>> CONFIG ROOT:", config.project_root)
 

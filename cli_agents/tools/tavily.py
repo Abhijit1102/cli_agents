@@ -1,5 +1,6 @@
 import json
 from cli_agents.config import AppConfig
+from cli_agents.config.global_config import get_config
 
 TAVILY_SEARCH_TOOL = {
     "type": "function",
@@ -22,6 +23,7 @@ TAVILY_SEARCH_TOOL = {
 
 
 def tavily_search(query: str, config: AppConfig, search_depth: str = "basic") -> str:
+    config = get_config()   
     api_key = config.tavily_api_key
 
     if not api_key:

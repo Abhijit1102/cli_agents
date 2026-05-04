@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import List
 
 from cli_agents.utils import should_ignore
-from cli_agents.config import load_env
-
-config = load_env()
-client = OpenAI(api_key=config.openai_api_key)
+from cli_agents.config.global_config import get_config
 
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
@@ -183,6 +180,9 @@ def analyze_image(path: str) -> str:
     try:
         with open(target, "rb") as img_file:
             base64_image = base64.b64encode(img_file.read()).decode("utf-8")
+
+        config = get_config()  
+        client = OpenAI(api_key=config.openai_api_key)    
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
