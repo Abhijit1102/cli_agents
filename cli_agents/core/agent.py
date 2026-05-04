@@ -88,18 +88,21 @@ class AIController:
 
             for tool_call in tool_calls:
                 name = tool_call.function.name
+                args_raw = tool_call.function.arguments
+
                 try:
-                    args = json.loads(tool_call.function.arguments)
-                except:
+                    args = json.loads(args_raw, strict=False)
+                except Exception as e:
+                    print("JSON parse failed:", e)
                     args = {}
 
-                # ── Signal tool start (picked up by ChatUI Live block) ──
-                args_preview = ", ".join(f"{k}={str(v)[:40]}" for k, v in args.items())
-                yield f"\x00TOOL_START:{name}:{args_preview}"
 
                 result = await self._execute_tool_safe(name, args)
 
                 # ── Signal tool done ────────────────────────────────────
+                if name in {"git_diff", "code_diff", "file_diff"}:
+                    yield f"\x00DIFF_RESULT:{result}"
+    
                 yield f"\x00TOOL_DONE:{name}"
 
                 self.memory.append_tool(tool_call.id, name, result)

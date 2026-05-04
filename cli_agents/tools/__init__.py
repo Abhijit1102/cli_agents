@@ -7,6 +7,7 @@ from .fs_tools import (
 )
 from .shell_tools import RUN_COMMAND_TOOL, run_shell_command
 from .tavily import TAVILY_SEARCH_TOOL, tavily_search
+from .show_diff import GIT_DIFF_TOOL, git_diff
 
 # ───────────────────────────────
 # Tool Definitions (for LLM)
@@ -20,6 +21,7 @@ TOOLS = [
     ANALYZE_IMAGE_TOOL,
     RUN_COMMAND_TOOL,
     TAVILY_SEARCH_TOOL,
+    GIT_DIFF_TOOL,
 ]
 
 # ───────────────────────────────
@@ -34,6 +36,7 @@ _EXECUTORS = {
     "analyze_image": analyze_image,
     "run_shell_command": run_shell_command,
     "tavily_search": tavily_search,
+    "git_diff": git_diff,
 }
 
 # ───────────────────────────────

@@ -1,321 +1,38 @@
+"""
+app.py — ChatUI (orchestration layer)
+
+Only change from the original: the blocking Prompt.ask() call inside
+run() is replaced with ask_with_palette(), which gives the slash-command
+palette (↑ ↓ arrow navigation, fuzzy filtering, Enter to select).
+"""
+
 import os
 import time
-import anyio
-import threading
-from typing import List, Optional
+import json
 from datetime import datetime
-import zoneinfo
+from typing import List
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.text import Text
-from rich.markdown import Markdown
-from rich.table import Table
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.columns import Columns
-from rich.align import Align
+import anyio
 from rich import box
+from rich.syntax import Syntax
+from rich.columns import Columns
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
-def _make_console() -> Console:
-    if os.name == "nt" and os.getenv("MSYSTEM"):
-        return Console(force_terminal=True, color_system="truecolor")
-    return Console(color_system="truecolor")
+from .clock import animated_timestamp, LiveClock, render_theme_preview
+from .renderers import AgentStatusRenderer
+from .theme import THEME, P, D, A, S, W
+from .utils import CONSOLE, local_tz
+from .slash_commands import ask_with_palette   # ← palette swap
 
-CONSOLE  = _make_console()
-local_tz = zoneinfo.ZoneInfo("Asia/Kolkata")
-
-
-# ──────────────────────────────────────────────
-# THEME SYSTEM
-# ──────────────────────────────────────────────
-class ThemeManager:
-    THEMES = {
-        "cyan":   {"primary": "#00f5ff", "dim": "#007a80", "accent": "#bf5fff", "success": "#39ff14", "warn": "#ffe600"},
-        "green":  {"primary": "#39ff14", "dim": "#145c14", "accent": "#00f5ff", "success": "#ffe600", "warn": "#ff6b35"},
-        "purple": {"primary": "#bf5fff", "dim": "#4b1f73", "accent": "#ff2079", "success": "#39ff14", "warn": "#ffe600"},
-        "yellow": {"primary": "#ffe600", "dim": "#7a6f00", "accent": "#ff6b35", "success": "#39ff14", "warn": "#ff2079"},
-        "orange": {"primary": "#ff6b35", "dim": "#7a2f14", "accent": "#ffe600", "success": "#39ff14", "warn": "#ff2079"},
-        "pink":   {"primary": "#ff2079", "dim": "#7a0033", "accent": "#bf5fff", "success": "#39ff14", "warn": "#ffe600"},
-        "white":  {"primary": "#ffffff", "dim": "#aaaaaa", "accent": "#00f5ff", "success": "#39ff14", "warn": "#ffe600"},
-    }
-
-    SHIFT_FRAMES = {
-        "cyan":   ["#00f5ff", "#bf5fff", "#39ff14", "#ffe600", "#ff2079", "#ff6b35"],
-        "green":  ["#39ff14", "#00f5ff", "#ffe600", "#bf5fff", "#ff6b35", "#39ff14"],
-        "purple": ["#bf5fff", "#ff2079", "#00f5ff", "#ffe600", "#39ff14", "#bf5fff"],
-        "yellow": ["#ffe600", "#ff6b35", "#ff2079", "#00f5ff", "#bf5fff", "#39ff14"],
-        "orange": ["#ff6b35", "#ffe600", "#ff2079", "#bf5fff", "#00f5ff", "#39ff14"],
-        "pink":   ["#ff2079", "#bf5fff", "#ffe600", "#ff6b35", "#00f5ff", "#39ff14"],
-        "white":  ["#ffffff", "#aaaaaa", "#00f5ff", "#bf5fff", "#ffe600", "#39ff14"],
-    }
-
-    def __init__(self):
-        self._frame = 0
-        self._lock  = threading.Lock()
-        self.set_theme("cyan")
-
-    def set_theme(self, name: str) -> bool:
-        t = self.THEMES.get(name.lower())
-        if not t:
-            return False
-        self.name    = name.lower()
-        self.primary = t["primary"]
-        self.dim     = t["dim"]
-        self.accent  = t["accent"]
-        self.success = t["success"]
-        self.warn    = t["warn"]
-        with self._lock:
-            self._frame = 0
-        return True
-
-    def next_shift(self) -> str:
-        frames = self.SHIFT_FRAMES[self.name]
-        with self._lock:
-            c = frames[self._frame % len(frames)]
-            self._frame += 1
-        return c
-
-    def list_themes(self) -> list:
-        return list(self.THEMES.keys())
+# Sentinel prefix used to carry diff payloads between agent and UI.
+# Must match exactly what AIController yields.
+_DIFF_PREFIX = "\x00DIFF_RESULT:"
 
 
-THEME = ThemeManager()
-
-# Helpers — always resolved at call time so a /theme switch is instant
-def P()  -> str: return THEME.primary
-def D()  -> str: return THEME.dim
-def A()  -> str: return THEME.accent
-def S()  -> str: return THEME.success
-def W()  -> str: return THEME.warn
-def SH() -> str: return THEME.next_shift()
-
-
-# ──────────────────────────────────────────────
-# ANIMATED TIMESTAMP
-# ──────────────────────────────────────────────
-def _animated_timestamp() -> Text:
-    now   = datetime.now(local_tz)
-    color = SH()
-    t = Text()
-    t.append("◈ ",                     style=f"bold {A()}")
-    t.append(now.strftime("%Y-%m-%d"), style=f"dim {P()}")
-    t.append("  ⏱ ",                  style=f"bold {color}")
-    t.append(now.strftime("%H:%M:%S"), style=f"bold {color} blink")
-    t.append(" ◈",                     style=f"bold {A()}")
-    return t
-
-
-# ──────────────────────────────────────────────
-# LIVE CLOCK
-# ──────────────────────────────────────────────
-class LiveClock:
-    def __rich__(self) -> Panel:
-        now   = datetime.now(local_tz)
-        color = SH()
-        t = Text(justify="center")
-        t.append("\n")
-        t.append(now.strftime("%H:%M:%S"),              style=f"bold {color}")
-        t.append(f".{now.strftime('%f')[:3]}",           style=f"dim {D()}")
-        t.append(f"\n{now.strftime('%A, %d %B %Y')}\n", style=f"dim {A()}")
-        return Panel(
-            Align.center(t),
-            title=f"[bold {P()}]◈ SYSTEM CLOCK ◈[/bold {P()}]",
-            border_style=P(), box=box.DOUBLE_EDGE, padding=(0, 2),
-        )
-
-
-# ──────────────────────────────────────────────
-# THEME SWATCH PREVIEW
-# ──────────────────────────────────────────────
-def _render_theme_preview(console: Console) -> None:
-    header = Text.assemble(
-        ("◈ AVAILABLE THEMES ◈\n",             f"bold {P()}"),
-        (f"  current → {THEME.name.upper()}\n", f"dim {P()}"),
-    )
-    tbl = Table.grid(padding=(0, 2))
-    for _ in range(4):
-        tbl.add_column()
-    items = list(ThemeManager.THEMES.items())
-    for i in range(0, len(items), 4):
-        row = []
-        for name, colors in items[i:i+4]:
-            active = " ◀" if name == THEME.name else ""
-            cell = Text()
-            cell.append("  ██  ", style=f"bold {colors['primary']}")
-            cell.append(name,     style=f"bold {colors['primary']}")
-            cell.append(active,   style=f"dim {colors['dim']}")
-            row.append(cell)
-        while len(row) < 4:
-            row.append(Text(""))
-        tbl.add_row(*row)
-    hint = Text.assemble(
-        ("\n  /theme <name>  e.g. ", f"dim {D()}"),
-        ("/theme purple",             f"bold {A()}"),
-    )
-    body = Table.grid(); body.add_column()
-    body.add_row(header); body.add_row(tbl); body.add_row(hint)
-    console.print(Panel(
-        body,
-        title=f"[bold {P()}]◈ THEME SELECTOR ◈[/bold {P()}]",
-        border_style=P(), box=box.DOUBLE_EDGE, padding=(1, 1),
-    ))
-
-
-# ──────────────────────────────────────────────
-# SECURITY / TRUST PROMPT
-# ──────────────────────────────────────────────
-def trust_folder_ui() -> None:
-    folder = os.getcwd()
-    CONSOLE.clear()
-
-    # Rainbow colors — one per ASCII art row
-    RAINBOW = [
-        "#ff0000",  # red
-        "#ff6600",  # orange
-        "#ffe600",  # yellow
-        "#39ff14",  # green
-        "#00f5ff",  # cyan
-        "#0066ff",  # blue
-        "#bf5fff",  # violet
-    ]
-
-    art = Text(justify="center")
-    art.append("\n")
-    art.append("  ██████╗██╗     ██╗      █████╗  ██████╗ ███████╗███╗   ██╗████████╗\n", style=f"bold {RAINBOW[0]}")
-    art.append("  ██╔════╝██║     ██║     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝\n", style=f"bold {RAINBOW[1]}")
-    art.append("  ██║     ██║     ██║     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   \n", style=f"bold {RAINBOW[2]}")
-    art.append("  ██║     ██║     ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   \n", style=f"bold {RAINBOW[3]}")
-    art.append("  ╚██████╗███████╗███████╗██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   \n", style=f"bold {RAINBOW[4]}")
-    art.append("   ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   \n", style=f"bold {RAINBOW[5]}")
-    art.append("\n")
-
-    # Rainbow subtitle — each word a different color
-    subtitle = Text(justify="center")
-    words = ["CLI", "-", "AGENT", "  //  ", "SECURITY", "CHECK"]
-    for i, w in enumerate(words):
-        subtitle.append(w, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-    subtitle.append("\n")
-    art.append_text(subtitle)
-    art.append("\n")
-
-    # Rainbow border cycles through colors for the panel title
-    rb_title = Text()
-    label = " Security Check "
-    for i, ch in enumerate(label):
-        rb_title.append(ch, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-
-    CONSOLE.print(Panel(
-        art,
-        title=rb_title,
-        subtitle="[dim white]v1.0.0[/dim white]",
-        border_style="white",
-        box=box.DOUBLE_EDGE,
-        padding=(1, 2),
-    ))
-
-    # Rainbow CWD line — each path segment a different color
-    cwd_line = Text()
-    cwd_line.append("  Current Directory  ", style="bold white")
-    parts = folder.replace("\\", "/").split("/")
-    for i, part in enumerate(parts):
-        if part:
-            cwd_line.append("/", style=f"dim {RAINBOW[i % len(RAINBOW)]}")
-            cwd_line.append(part, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-    CONSOLE.print(cwd_line)
-    CONSOLE.print()
-
-    # Rainbow prompt question
-    question = Text()
-    question_str = "\n ? Trust this folder and enable file/shell access?"
-    for i, ch in enumerate(question_str):
-        question.append(ch, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-
-    answer = Prompt.ask(question, choices=["y", "n"], default="n")
-
-    if answer != "y":
-        # Rainbow denied message
-        denied = Text(justify="center")
-        denied.append("\n")
-        msg = "  Access Denied. Folder not trusted. Exiting...  "
-        for i, ch in enumerate(msg):
-            denied.append(ch, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-        denied.append("\n")
-        CONSOLE.print(Panel(denied, title="[bold red]Terminated[/bold red]",
-                            border_style="red", box=box.DOUBLE_EDGE))
-        raise SystemExit(0)
-
-    # Rainbow success message
-    success = Text(justify="center")
-    success.append("\n")
-    msg = "  Environment Trusted. Initializing Neural Engine...  "
-    for i, ch in enumerate(msg):
-        success.append(ch, style=f"bold {RAINBOW[i % len(RAINBOW)]}")
-    success.append("\n")
-    CONSOLE.print(Panel(success, border_style="white", box=box.DOUBLE_EDGE))
-    time.sleep(0.6)
-
-
-# ──────────────────────────────────────────────
-# LIVE STATUS RENDERER
-# ──────────────────────────────────────────────
-class AgentStatusRenderer:
-    def __init__(self):
-        self.phase: str = "thinking"
-        self.tool_name: Optional[str] = None
-        self.tool_args: Optional[str] = None
-        self.completed_tools: List[str] = []
-
-    def set_thinking(self):
-        self.phase = "thinking"; self.tool_name = None; self.tool_args = None
-
-    def set_tool(self, name: str, args: str = ""):
-        self.phase = "tool"; self.tool_name = name; self.tool_args = args
-
-    def add_completed(self, name: str):
-        self.completed_tools.append(name); self.phase = "thinking"; self.tool_name = None
-
-    def set_done(self):
-        self.phase = "done"
-
-    def __rich__(self):
-        rows = []
-        for t in self.completed_tools:
-            done = Text()
-            done.append("  ✔  ", style=f"bold {S()}")
-            done.append(t,       style=f"dim {S()}")
-            rows.append(done)
-
-        if self.phase == "thinking":
-            rows.append(Spinner("dots", text=Text(
-                " agent is thinking…", style=f"bold {P()}"
-            )))
-        elif self.phase == "tool":
-            tool_line = Text()
-            tool_line.append("  ⚙  executing  ", style=f"bold {W()}")
-            tool_line.append(self.tool_name or "?", style=f"bold black on {W()}")
-            if self.tool_args:
-                tool_line.append(f"  {self.tool_args}", style=f"dim {P()}")
-            rows.append(Spinner("point", text=tool_line))
-        elif self.phase == "done":
-            rows.append(Text("  ✔  finished", style=f"bold {S()}"))
-
-        grid = Table.grid(padding=(0, 0)); grid.add_column()
-        for r in rows:
-            grid.add_row(r)
-
-        phase_color = {"thinking": P(), "tool": W(), "done": S()}.get(self.phase, P())
-        return Panel(
-            grid,
-            title=f"[bold {phase_color}]AGENT STATUS[/bold {phase_color}]",
-            border_style=phase_color, box=box.ROUNDED, padding=(0, 1),
-        )
-
-
-# ──────────────────────────────────────────────
-# CHAT UI
-# ──────────────────────────────────────────────
 class ChatUI:
     def __init__(self, agent):
         self.agent   = agent
@@ -326,22 +43,21 @@ class ChatUI:
     def _ts_row(self, label: str) -> Table:
         h = Table.grid(expand=True)
         h.add_column(ratio=1); h.add_column(justify="right")
-        h.add_row(Text(label, style=f"bold {P()}"), _animated_timestamp())
+        h.add_row(Text(label, style=f"bold {P()}"), animated_timestamp())
         return h
 
     def _body(self, *rows) -> Table:
         t = Table.grid(); t.add_column()
-        for r in rows: t.add_row(r)
+        for r in rows:
+            t.add_row(r)
         return t
 
     # ── renders ───────────────────────────────
     def _render_header(self) -> None:
-        left = Text.assemble(
-            ("🚀 AI CONTROLLER ACTIVE", f"bold {P()}"),
-        )
+        left  = Text.assemble(("🚀 AI CONTROLLER ACTIVE", f"bold {P()}"))
         right = Text.assemble(
-            ("Type ", f"dim {D()}"),
-            ("/help", f"bold {P()}"),
+            ("Type ",    f"dim {D()}"),
+            ("/help",    f"bold {P()}"),
             (" for commands", f"italic dim {D()}"),
         )
         header = Table.grid(expand=True)
@@ -414,14 +130,15 @@ class ChatUI:
         )
         self.console.print(Panel(
             Columns([msg, legend], expand=True),
-            title=f"[bold]SYSTEM LOG[/bold]",
+            title="[bold]SYSTEM LOG[/bold]",
             border_style=c, box=box.SQUARE,
         ))
 
     def _render_usage(self) -> None:
         usage = self.agent.get_last_usage() if hasattr(self.agent, "get_last_usage") else None
         if not usage:
-            self._render_system("No usage data available.", A()); return
+            self._render_system("No usage data available.", A())
+            return
         table = Table(title="LLM Token Usage", box=box.MINIMAL_DOUBLE_HEAD)
         table.add_column("Metric", style=f"{P()}")
         table.add_column("Value",  style=f"bold {W()}")
@@ -437,7 +154,7 @@ class ChatUI:
     def _handle_theme(self, cmd: str) -> None:
         parts = cmd.strip().split()
         if len(parts) == 1:
-            _render_theme_preview(self.console)
+            render_theme_preview(self.console)
             return
         name = parts[1].lower()
         if not THEME.set_theme(name):
@@ -454,7 +171,6 @@ class ChatUI:
         user = os.getenv("USERNAME") or os.getenv("USER") or "user"
         host = os.uname().nodename if hasattr(os, "uname") else "localhost"
         cwd  = os.getcwd()
-
         home = os.path.expanduser("~")
         if cwd.startswith(home):
             cwd = "~" + cwd[len(home):]
@@ -463,21 +179,93 @@ class ChatUI:
             f"[bold {P()}]{cwd}[/bold {P()}]$ "
         )
 
+    def render_git_diff(self, diff_json: str) -> None:
+        """
+        Parses the JSON payload from the git_diff tool and renders 
+        a colorized, formatted panel to the console.
+        """
+        try:
+            # 1. Parse the JSON
+            if not diff_json or not diff_json.strip():
+                self._render_system("Received empty diff payload.", A())
+                return
+
+            data = json.loads(diff_json)
+
+            # 2. Check for Tool-level Errors
+            # This handles cases where the tool returned JSON but contains an error message
+            if data.get("error"):
+                self._render_system(f"Diff Tool Error: {data['error']}", A())
+                return
+
+            diff_text = data.get("diff", "")
+            added = data.get("added", 0)
+            removed = data.get("removed", 0)
+
+            # 3. Handle No Changes Case
+            if not diff_text:
+                self._render_system("No changes detected between versions.", S())
+                return
+
+            # 4. Create the Rich Panel
+            # Using 'diff' syntax highlighter and a clear title with stats
+            panel = Panel(
+                Syntax(
+                    diff_text, 
+                    "diff", 
+                    theme="monokai", 
+                    line_numbers=True, 
+                    word_wrap=True
+                ),
+                title=f"[bold cyan]GIT DIFF[/bold cyan] [white](+{added} / -{removed})[/white]",
+                title_align="left",
+                border_style="cyan",
+                padding=(0, 1),
+                box=box.ROUNDED
+            )
+
+            # 5. Print to Console
+            self.console.print(panel)
+
+        except json.JSONDecodeError:
+            # This catches the "Expecting value" error by falling back to raw text
+            self._render_system(
+                f"Failed to parse Diff JSON. Raw Output:\n{diff_json}", 
+                A()
+            )
+        except Exception as e:
+            # General safety catch
+            self._render_system(f"UI Rendering Error: {str(e)}", A())
+
     # ── agent runner ─────────────────────────
     async def _run_with_live_status(self, cmd: str) -> str:
-        renderer      = AgentStatusRenderer()
+        renderer = AgentStatusRenderer()
         content_parts: List[str] = []
+        diff_outputs: List[str] = []
+
         with Live(renderer, console=self.console, refresh_per_second=12, transient=True):
             async for chunk in self.agent.handle_message(cmd):
+
                 if chunk.startswith("\x00TOOL_START:"):
                     _, rest = chunk.split(":", 1)
                     name, _, args = rest.partition(":")
                     renderer.set_tool(name.strip(), args.strip())
+
                 elif chunk.startswith("\x00TOOL_DONE:"):
                     renderer.add_completed(chunk.split(":", 1)[1].strip())
+
+                elif chunk.startswith(_DIFF_PREFIX):
+                    diff_outputs.append(chunk[len(_DIFF_PREFIX):])
+
                 else:
                     content_parts.append(chunk)
+
             renderer.set_done()
+
+        # Render diffs outside the Live block so Rich doesn't fight itself
+        for diff in diff_outputs:
+            self.render_git_diff(diff)
+
         return "".join(content_parts)
 
     # ── main loop ────────────────────────────
@@ -488,8 +276,9 @@ class ChatUI:
 
         while True:
             try:
+                # ↓ palette-aware prompt — type "/" to open command menu
                 user_input = await anyio.to_thread.run_sync(
-                    lambda: Prompt.ask(self._get_prompt_label())
+                    lambda: ask_with_palette(self._get_prompt_label())
                 )
             except (KeyboardInterrupt, EOFError):
                 self.console.print(Text("\nInterrupted. Shutting down...", style=f"bold {A()}"))
