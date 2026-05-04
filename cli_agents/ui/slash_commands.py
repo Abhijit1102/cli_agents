@@ -22,21 +22,28 @@ from .slash_palette import SlashCommand, TERM, make_palette_session
 # ─────────────────────────────────────────────
 
 COMMANDS: List[SlashCommand] = [
-    SlashCommand("help",         "Show all available commands",              aliases=["?", "commands"]),
-    SlashCommand("reset",        "Wipe short-term agent memory",             aliases=["clear-memory", "forget"]),
-    SlashCommand("usage",        "Check API token consumption",              aliases=["tokens", "cost"]),
-    SlashCommand("cwd",          "Show current working directory",           aliases=["pwd", "dir"]),
-    SlashCommand("history",      "Replay prompts from this session",         aliases=["log", "past"]),
-    SlashCommand("clear",        "Reset screen view",                        aliases=["cls", "clean"]),
-    SlashCommand("clock",        "Show live system clock (5 s)",             aliases=["time", "date"]),
-    SlashCommand("theme",        "List or switch colour theme",              aliases=["color", "colour"]),
-    SlashCommand("theme cyan",   "Switch to cyan theme  (default)",          aliases=["cyan"]),
-    SlashCommand("theme green",  "Switch to green theme",                    aliases=["green"]),
-    SlashCommand("theme purple", "Switch to purple theme",                   aliases=["purple"]),
-    SlashCommand("theme yellow", "Switch to yellow theme",                   aliases=["yellow"]),
-    SlashCommand("theme orange", "Switch to orange theme",                   aliases=["orange"]),
-    SlashCommand("theme pink",   "Switch to pink theme",                     aliases=["pink"]),
-    SlashCommand("theme white",  "Switch to white theme",                    aliases=["white"]),
+    SlashCommand("help", "Show all available commands", aliases=["?", "commands"]),
+    SlashCommand("reset", "Wipe short-term agent memory", aliases=["clear-memory", "forget"]),
+    SlashCommand("usage", "Check API token consumption", aliases=["tokens", "cost"]),
+    SlashCommand("cwd", "Show current working directory", aliases=["pwd", "dir"]),
+    SlashCommand("history", "Replay prompts from this session", aliases=["log", "past"]),
+    SlashCommand("clear", "Reset screen view", aliases=["cls", "clean"]),
+    SlashCommand("clock", "Show live system clock (5 s)", aliases=["time", "date"]),
+
+    SlashCommand("theme", "List or switch colour theme", aliases=["color", "colour"]),
+    SlashCommand("theme cyan", "Switch to cyan theme (default)", aliases=["cyan"]),
+    SlashCommand("theme green", "Switch to green theme", aliases=["green"]),
+    SlashCommand("theme purple", "Switch to purple theme", aliases=["purple"]),
+    SlashCommand("theme yellow", "Switch to yellow theme", aliases=["yellow"]),
+    SlashCommand("theme orange", "Switch to orange theme", aliases=["orange"]),
+    SlashCommand("theme pink", "Switch to pink theme", aliases=["pink"]),
+    SlashCommand("theme white", "Switch to white theme", aliases=["white"]),
+
+    SlashCommand(
+        "sandbox",
+        "Manage sandbox environments (create/run/exec/destroy/list/status)",
+        aliases=["sb"]
+    ),
 ]
 
 

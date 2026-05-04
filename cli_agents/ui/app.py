@@ -24,6 +24,7 @@ from rich.text import Text
 
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
+from cli_agents.sandbox import handle_sandbox_command
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
 from .slash_commands import ask_with_palette   # ← palette swap
@@ -315,6 +316,10 @@ class ChatUI:
                 self._render_live_clock(5.0); continue
             if cmd.startswith("/theme"):
                 self._handle_theme(cmd); continue
+            if cmd.startswith("/sandbox"):
+                suffix = cmd[len("/sandbox"):].strip()
+                handle_sandbox_command(self, suffix)
+                continue    
 
             self._render_user(cmd)
             self.history.append(cmd)
