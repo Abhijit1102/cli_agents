@@ -15,6 +15,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.status import Status
 
 from cli_agents.config.global_config import get_config
 from .clock import animated_timestamp, LiveClock, render_theme_preview
@@ -271,20 +272,27 @@ class ChatUI:
                 continue   
 
             if cmd == "/init_project":
-                self._render_system("⚙ Scanning project and generating description…", P())
-                try:
-                    cfg  = self.agent.config
-                    path = await generate_project_description(
-                        project_root=cfg.project_root,
-                        client=self.agent.client,
-                        model=cfg.model,
-                    )
-                    self._render_system(
-                        f"✅ PROJECT_DESCRIPTION.md written → {path}", S()
-                    )
-                except Exception as e:
-                    self._render_system(f"❌ Failed to generate description: {e}", A())
-                continue     
+                cfg = self.agent.config
+
+                with Status(
+                    "[bold yellow]⚙ Scanning project • analyzing • generating description...[/bold yellow]",
+                    spinner="dots",
+                    console=self.console,
+                ):
+                    try:
+                        path = await generate_project_description(
+                            project_root=cfg.project_root,
+                            client=self.agent.client,
+                            model=cfg.model,
+                        )
+                    except Exception as e:
+                        self._render_system(f"❌ Failed to generate description: {e}", A())
+                        continue
+
+                self._render_system(
+                    f"✅ PROJECT_DESCRIPTION.md written → {path}", S()
+                )
+                continue    
 
             self._render_user(cmd)
             self.history.append(cmd)
