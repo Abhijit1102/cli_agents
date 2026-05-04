@@ -5,6 +5,7 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
+from rich.status import Status
 
 from .theme import P, W, S, D, A
 
@@ -48,15 +49,18 @@ class AgentStatusRenderer:
             rows.append(done)
 
         if self.phase == "thinking":
-            rows.append(Spinner("dots", text=Text(
-                " agent is thinking…", style=f"bold {P()}"
-            )))
+            rows.append(
+                Status(
+                    "[bold yellow]🚀 thinking • evaluating • deciding…[/bold yellow]",
+                    spinner="line"
+                )
+            )
         elif self.phase == "tool":
             tool_line = Text()
             tool_line.append("  ⚙  executing  ", style=f"bold {W()}")
             tool_line.append(self.tool_name or "?", style=f"bold black on {W()}")
             if self.tool_args:
-                tool_line.append(f"  {self.tool_args}", style=f"dim {P()}")
+                tool_line.append(f"🧾 args  {self.tool_args}", style=f"dim {P()}")
             rows.append(Spinner("point", text=tool_line))
         elif self.phase == "done":
             rows.append(Text("  ✔  finished", style=f"bold {S()}"))
