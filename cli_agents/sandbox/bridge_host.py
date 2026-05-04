@@ -14,7 +14,7 @@ BRIDGE_CMD_FILE  = "bridge_cmd.json"
 BRIDGE_OUT_FILE  = "bridge_out.json"
 BRIDGE_READY     = ".bridge_ready"
 POLL_INTERVAL    = 0.25
-STARTUP_TIMEOUT  = 120.0
+STARTUP_TIMEOUT  = 180.0  # Increased timeout for readiness
 
 
 class BridgeTimeout(Exception):
