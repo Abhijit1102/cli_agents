@@ -29,8 +29,8 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
-
-
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.shortcuts import CompleteStyle
 # ─────────────────────────────────────────────
 # Terminal-size helper
 # ─────────────────────────────────────────────
@@ -60,7 +60,8 @@ class TermSize:
     @property
     def menu_height(self) -> int:
         """Dropdown rows: terminal height minus prompt/status rows, clamped."""
-        return max(4, min(16, self.rows - 4))
+        # return max(4, min(16, self.rows - 4))
+        return max(6, self.rows - 3)
 
     @property
     def desc_width(self) -> int:
@@ -274,5 +275,7 @@ def make_palette_session(commands: List[SlashCommand]) -> PromptSession:
         auto_suggest=AutoSuggestFromHistory(),
         history=InMemoryHistory(),
         mouse_support=False,
-        complete_style="COLUMN",
+
+        # 👇 HERE is the correct place
+        complete_style=CompleteStyle.COLUMN,
     )
