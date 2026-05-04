@@ -1,26 +1,22 @@
 """
 cli_agents/sandbox/manager.py
-
 Windows Sandbox lifecycle manager.
-Handles create, run, exec, and destroy via PowerShell WSB files.
 """
-
 from __future__ import annotations
 
 import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 
-# ─── Data model ───────────────────────────────────────────────────────────────
+# ── Data model ────────────────────────────────────────────────────────────────
 
 @dataclass
 class SandboxSession:
@@ -28,19 +24,19 @@ class SandboxSession:
     wsb_path: Path
     log_dir: Path
     created_at: str
-    status: str = "created"   # created | running | stopped | destroyed
+    status: str = "created"
     shared_folder: Optional[Path] = None
     pid: Optional[int] = None
 
     def to_dict(self) -> dict:
         return {
-            "id": self.id,
-            "wsb_path": str(self.wsb_path),
-            "log_dir": str(self.log_dir),
-            "created_at": self.created_at,
-            "status": self.status,
+            "id":            self.id,
+            "wsb_path":      str(self.wsb_path),
+            "log_dir":       str(self.log_dir),
+            "created_at":    self.created_at,
+            "status":        self.status,
             "shared_folder": str(self.shared_folder) if self.shared_folder else None,
-            "pid": self.pid,
+            "pid":           self.pid,
         }
 
     @staticmethod
@@ -56,11 +52,9 @@ class SandboxSession:
         )
 
 
-# ─── Registry (persists sessions across CLI invocations) ──────────────────────
+# ── Registry ──────────────────────────────────────────────────────────────────
 
 class SandboxRegistry:
-    """Persists sandbox session metadata to a JSON file."""
-
     def __init__(self, registry_path: Path):
         self.path = registry_path
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,7 +65,9 @@ class SandboxRegistry:
         if self.path.exists():
             try:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
-                self._sessions = {k: SandboxSession.from_dict(v) for k, v in raw.items()}
+                self._sessions = {
+                    k: SandboxSession.from_dict(v) for k, v in raw.items()
+                }
             except Exception:
                 self._sessions = {}
 
@@ -103,26 +99,29 @@ class SandboxRegistry:
         return sorted(self._sessions.values(), key=lambda s: s.created_at)[-1]
 
 
-# ─── Core manager ─────────────────────────────────────────────────────────────
+# ── Manager ───────────────────────────────────────────────────────────────────
 
 class SandboxManager:
     """
-    Manages Windows Sandbox instances via .wsb config files and PowerShell.
+    Manages Windows Sandbox instances.
 
-    Typical usage:
+    Flow:
         manager = SandboxManager(project_root)
         session = manager.create(shared_folder=project_root)
+        manager.prepare_share(session.id)   # copies bootstrap + package
         manager.run(session.id)
-        result = manager.exec(session.id, "dir C:\\Users\\WDAGUtilityAccount\\Desktop")
+        bridge  = manager.attach(session.id) # waits for .bridge_ready
+        reply   = bridge.send("write hello.py")
         manager.destroy(session.id)
     """
 
+    # Bootstrap runs from the share via LogonCommand
     WSB_TEMPLATE = """\
 <Configuration>
   <VGpu>Enable</VGpu>
   <Networking>Enable</Networking>
   <LogonCommand>
-    <Command>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\\SandboxLogs | Out-Null"</Command>
+    <Command>powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\\HostShare\\bootstrap.ps1"</Command>
   </LogonCommand>
 {mapped_folders}</Configuration>
 """
@@ -139,11 +138,11 @@ class SandboxManager:
 
     def __init__(self, project_root: Path):
         self.project_root = project_root
-        self.sandbox_dir = project_root / ".sandbox"
+        self.sandbox_dir  = project_root / ".sandbox"
         self.sandbox_dir.mkdir(parents=True, exist_ok=True)
         self.registry = SandboxRegistry(self.sandbox_dir / "registry.json")
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    # ── internal helpers ──────────────────────────────────────────────────────
 
     def _new_id(self) -> str:
         return uuid.uuid4().hex[:8]
@@ -159,36 +158,30 @@ class SandboxManager:
     def _build_wsb(self, sid: str, shared_folder: Optional[Path] = None) -> Path:
         mapped = ""
         if shared_folder and shared_folder.exists():
-            mapped = self.MAPPED_FOLDER_BLOCK.format(host_path=str(shared_folder))
-        content = self.WSB_TEMPLATE.format(mapped_folders=mapped)
+            mapped = self.MAPPED_FOLDER_BLOCK.format(
+                host_path=str(shared_folder)
+            )
         wsb = self._wsb_path(sid)
-        wsb.write_text(content, encoding="utf-8")
+        wsb.write_text(
+            self.WSB_TEMPLATE.format(mapped_folders=mapped),
+            encoding="utf-8",
+        )
         return wsb
 
     def _ps(self, script: str, capture: bool = True) -> subprocess.CompletedProcess:
-        """Run a PowerShell snippet and return the result."""
-        args = [
-            "powershell", "-NoProfile", "-NonInteractive",
-            "-ExecutionPolicy", "Bypass",
-            "-Command", script,
-        ]
         return subprocess.run(
-            args,
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-Command", script],
             capture_output=capture,
             text=True,
         )
 
-    # ── public API ───────────────────────────────────────────────────────────
+    # ── public API ────────────────────────────────────────────────────────────
 
     def create(self, shared_folder: Optional[Path] = None) -> SandboxSession:
-        """
-        Build a .wsb config and register a new sandbox session.
-        Does NOT launch the sandbox yet — call run() for that.
-        """
-        sid = self._new_id()
-        wsb = self._build_wsb(sid, shared_folder)
+        sid     = self._new_id()
+        wsb     = self._build_wsb(sid, shared_folder)
         log_dir = self._log_dir(sid)
-
         session = SandboxSession(
             id=sid,
             wsb_path=wsb,
@@ -199,56 +192,104 @@ class SandboxManager:
         self.registry.add(session)
         return session
 
-    def run(self, sid: str) -> tuple[bool, str]:
+    def prepare_share(self, sid: str) -> tuple[bool, str]:
         """
-        Launch the Windows Sandbox for the given session ID.
-        Returns (success, message).
+        Copies bootstrap.ps1 and the cli_agents package into the shared folder
+        so the sandbox can install and run everything without internet access.
+        
+        Call this after create() and before run().
         """
         session = self.registry.get(sid)
         if session is None:
-            return False, f"No sandbox with id '{sid}' found."
+            return False, f"No session '{sid}'."
+        if not session.shared_folder:
+            return False, "Session has no shared folder."
+
+        share = session.shared_folder
+        errors: list[str] = []
+
+        # 1. Copy bootstrap.ps1
+        src_bootstrap = Path(__file__).parent / "bootstrap.ps1"
+        dst_bootstrap = share / "bootstrap.ps1"
+        if src_bootstrap.exists():
+            shutil.copy2(src_bootstrap, dst_bootstrap)
+        else:
+            errors.append(f"bootstrap.ps1 not found at {src_bootstrap}")
+
+        # 2. Mirror the cli_agents package into share/cli_agents
+        #    so bridge_sandbox.py can be found at C:\HostShare\cli_agents\sandbox\bridge_sandbox.py
+        src_pkg = Path(__file__).parent.parent   # cli_agents/ root
+        dst_pkg = share / "cli_agents"
+        if dst_pkg.exists():
+            shutil.rmtree(dst_pkg)
+        shutil.copytree(src_pkg, dst_pkg, ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", ".venv", ".git", ".sandbox",
+        ))
+
+        # 3. Copy .env from project root if present
+        env_src = self.project_root / ".env"
+        if env_src.exists():
+            shutil.copy2(env_src, share / ".env")
+
+        if errors:
+            return False, "Partial prepare: " + "; ".join(errors)
+        return True, f"Share prepared at {share}"
+
+    def run(self, sid: str) -> tuple[bool, str]:
+        session = self.registry.get(sid)
+        if session is None:
+            return False, f"No sandbox with id '{sid}'."
         if session.status == "running":
             return False, f"Sandbox '{sid}' is already running."
         if session.status == "destroyed":
             return False, f"Sandbox '{sid}' has been destroyed."
 
-        # WindowsSandbox.exe opens the .wsb file
         try:
             proc = subprocess.Popen(
                 ["WindowsSandbox.exe", str(session.wsb_path)],
                 shell=False,
             )
             session.status = "running"
-            session.pid = proc.pid
+            session.pid    = proc.pid
             self.registry.update(session)
             return True, f"Sandbox '{sid}' launched (pid={proc.pid})."
         except FileNotFoundError:
             return False, (
-                "WindowsSandbox.exe not found. "
-                "Enable it with: Enable-WindowsOptionalFeature -Online "
+                "WindowsSandbox.exe not found. Enable it with:\n"
+                "  Enable-WindowsOptionalFeature -Online "
                 "-FeatureName Containers-DisposableClientVM -All"
             )
         except Exception as exc:
             return False, f"Failed to launch sandbox: {exc}"
 
-    def exec(self, sid: str, command: str, timeout: int = 30) -> tuple[bool, str]:
+    def attach(self, sid: str) -> "HostBridge":
         """
-        Execute a PowerShell command inside a running sandbox via
-        Enter-PSSession / Invoke-Command over localhost loopback.
+        Returns a HostBridge for a running sandbox.
+        Blocks until the sandbox bridge signals readiness (.bridge_ready).
+        """
+        from .bridge_host import HostBridge, BridgeTimeout
 
-        NOTE: Windows Sandbox doesn't expose WinRM by default; this method
-        runs the command *on the host* inside a constrained PS scope as a
-        proxy, OR (when sandbox WinRM is available) remotes into it.
-        For full isolation use the shared-folder drop approach described below.
-        """
         session = self.registry.get(sid)
         if session is None:
-            return False, f"No sandbox with id '{sid}' found."
+            raise ValueError(f"No sandbox with id '{sid}'.")
+        if session.status != "running":
+            raise RuntimeError(
+                f"Sandbox '{sid}' is not running (status={session.status})."
+            )
+        if not session.shared_folder:
+            raise RuntimeError("Session has no shared folder — cannot bridge.")
+
+        bridge = HostBridge(session.shared_folder)
+        bridge.wait_for_ready()
+        return bridge
+
+    def exec(self, sid: str, command: str, timeout: int = 30) -> tuple[bool, str]:
+        session = self.registry.get(sid)
+        if session is None:
+            return False, f"No sandbox with id '{sid}'."
         if session.status != "running":
             return False, f"Sandbox '{sid}' is not running (status={session.status})."
 
-        # Strategy: drop a .ps1 script into the shared folder; sandbox
-        # logon-command picks it up. Here we run it on host as a fallback.
         if session.shared_folder:
             script_path = session.shared_folder / f"_sandbox_exec_{sid}.ps1"
             script_path.write_text(command, encoding="utf-8")
@@ -257,43 +298,46 @@ class SandboxManager:
                 script_path.unlink()
             except OSError:
                 pass
-            ok = result.returncode == 0
+            ok     = result.returncode == 0
             output = (result.stdout or "") + (result.stderr or "")
             return ok, output.strip()
 
-        # No shared folder — run directly on host (sandboxed via PS's constrained mode)
         result = self._ps(command)
-        ok = result.returncode == 0
+        ok     = result.returncode == 0
         output = (result.stdout or "") + (result.stderr or "")
         return ok, output.strip()
 
     def destroy(self, sid: str) -> tuple[bool, str]:
-        """
-        Kill the sandbox process and clean up its .wsb file.
-        """
         session = self.registry.get(sid)
         if session is None:
-            return False, f"No sandbox with id '{sid}' found."
+            return False, f"No sandbox with id '{sid}'."
         if session.status == "destroyed":
             return False, f"Sandbox '{sid}' is already destroyed."
 
-        # Try to kill by pid
         if session.pid:
-            self._ps(f"Stop-Process -Id {session.pid} -Force -ErrorAction SilentlyContinue")
+            self._ps(
+                f"Stop-Process -Id {session.pid} -Force -ErrorAction SilentlyContinue"
+            )
 
-        # Also kill any WindowsSandbox.exe processes referencing our .wsb
-        wsb_name = session.wsb_path.name
         self._ps(
             f"Get-Process WindowsSandbox -ErrorAction SilentlyContinue | "
             f"Where-Object {{ $_.MainWindowTitle -like '*{sid}*' }} | "
             f"Stop-Process -Force -ErrorAction SilentlyContinue"
         )
 
-        # Remove .wsb file
+        # Remove .wsb
         try:
             session.wsb_path.unlink(missing_ok=True)
         except OSError:
             pass
+
+        # Clean up bridge sentinel files in the share
+        if session.shared_folder:
+            for fname in (".bridge_ready", "bridge_cmd.json", "bridge_out.json"):
+                try:
+                    (session.shared_folder / fname).unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         session.status = "destroyed"
         self.registry.update(session)
