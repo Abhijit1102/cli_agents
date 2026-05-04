@@ -21,6 +21,7 @@ from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
 from .diff_renderer import render_git_diff          # ← clean import
 from cli_agents.sandbox import handle_sandbox_command
+from cli_agents.utils import generate_project_description
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
 from .slash_commands import ask_with_palette
@@ -267,7 +268,23 @@ class ChatUI:
             Tavily: {"enabled" if cfg.tavily_api_key else "disabled"}
             """
                 self._render_system(msg.strip(), P())
-                continue    
+                continue   
+
+            if cmd == "/init_project":
+                self._render_system("⚙ Scanning project and generating description…", P())
+                try:
+                    cfg  = self.agent.config
+                    path = await generate_project_description(
+                        project_root=cfg.project_root,
+                        client=self.agent.client,
+                        model=cfg.model,
+                    )
+                    self._render_system(
+                        f"✅ PROJECT_DESCRIPTION.md written → {path}", S()
+                    )
+                except Exception as e:
+                    self._render_system(f"❌ Failed to generate description: {e}", A())
+                continue     
 
             self._render_user(cmd)
             self.history.append(cmd)

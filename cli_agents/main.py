@@ -38,9 +38,8 @@ def start(
         api_key=config.openai_api_key,
         base_url=config.openai_base_url,
     )
-
     memory = ConversationMemory(
-        system_prompt=generate_system_prompt(config.project_root)
+        system_prompt=generate_system_prompt(config)
     )
 
     agent = AIController(client, config, memory)

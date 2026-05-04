@@ -1,11 +1,17 @@
-from pathlib import Path
+from cli_agents.config import AppConfig
 from cli_agents.utils import build_tree
 
 
-def generate_system_prompt(cwd: Path) -> str:
-    cwd = cwd.resolve()
+def generate_system_prompt(config: AppConfig) -> str:
+    cwd = config.project_root.resolve()
     tree = build_tree(cwd)
     tree_str = f"{cwd.name}/\n" + "\n".join(tree) if tree else "(empty)"
+
+    project_section = (
+        config.project_instructions
+        if config.project_instructions
+        else "(no project-specific instructions provided)"
+    )
 
     return f"""
 You are a CLI coding agent operating on a real filesystem.
@@ -16,6 +22,10 @@ You are precise, deterministic, and never modify anything without explicit user 
 Root: {cwd}
 
 {tree_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━ PROJECT INSTRUCTIONS ━━━━━━━━━━━
+{project_section}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━ CORE IDENTITY ━━━━━━━━━━━
