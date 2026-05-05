@@ -6,7 +6,6 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-
 # ────────────────────────────────────────────────────────────────
 # CONFIG MODEL
 # ────────────────────────────────────────────────────────────────
@@ -25,18 +24,25 @@ class AppConfig:
 # LOAD CONFIG
 # ────────────────────────────────────────────────────────────────
 def load_config(project_root: Path | None = None) -> AppConfig:
+    """
+    Loads configuration with a strict check for MCP config:
+    If .cli_agents/mcp.config.json exists, it is used. Otherwise, None.
+    """
     project_root = Path(project_root or Path.cwd()).resolve()
 
-    # 1. Load .env
+    # 1. Load .env from project root
     env_path = project_root / ".env"
     if env_path.exists():
         load_dotenv(env_path)
 
-    # 2. Load JSON config
-    json_config = {}
-    settings_path = project_root / ".cli_agents" / "settings.json"
-    project_description_path = project_root / ".cli_agents" / "CLI_AGENT.md"
+    # 2. Define standard paths
+    dot_folder = project_root / ".cli_agents"
+    settings_path = dot_folder / "settings.json"
+    project_description_path = dot_folder / "CLI_AGENT.md"
+    mcp_json_path = dot_folder / "mcp.config.json"
 
+    # 3. Load JSON settings
+    json_config = {}
     if settings_path.exists():
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
@@ -44,24 +50,19 @@ def load_config(project_root: Path | None = None) -> AppConfig:
         except Exception as e:
             raise RuntimeError(f"Invalid settings.json: {e}")
 
-    # ────────────────────────────────────────────────────────────
-    # 3. Helper (MUST be before usage)
-    # ────────────────────────────────────────────────────────────
+    # Helper to get config from JSON first, then Environment
     def get(key: str, default: Optional[str] = None):
         return json_config.get(key) or os.getenv(key) or default
 
     # ────────────────────────────────────────────────────────────
-    # 4. MCP CONFIG
+    # 4. MCP CONFIG (Strict File Check)
     # ────────────────────────────────────────────────────────────
-    mcp_config_path = get("MCP_CONFIG_PATH")
-
-    if mcp_config_path:
-        mcp_config_path = (project_root / mcp_config_path).resolve()
-
-        if not mcp_config_path.exists():
-            raise RuntimeError(
-                f"MCP config not found: {mcp_config_path}"
-            )
+    # If the file exists in .cli_agents/, we use it. 
+    # Otherwise, mcp_config_path is None, and AIController skips it.
+    if mcp_json_path.exists():
+        mcp_config_path = mcp_json_path.resolve()
+    else:
+        mcp_config_path = None
 
     # ────────────────────────────────────────────────────────────
     # 5. REQUIRED: OpenAI API Key
@@ -70,24 +71,23 @@ def load_config(project_root: Path | None = None) -> AppConfig:
 
     if not openai_api_key:
         raise RuntimeError(
-            "OPENAI_API_KEY is missing. Set it in settings.json, .env, or environment."
+            "OPENAI_API_KEY is missing. Please set it in .env or .cli_agents/settings.json"
         )
 
     # ────────────────────────────────────────────────────────────
     # 6. Optional project instructions
     # ────────────────────────────────────────────────────────────
     project_instructions = None
-
     if project_description_path.exists():
         try:
             project_instructions = project_description_path.read_text(
                 encoding="utf-8"
             ).strip()
         except Exception:
-            project_instructions = None  # fail silently
+            project_instructions = None
 
     # ────────────────────────────────────────────────────────────
-    # 7. RETURN CONFIG
+    # 7. RETURN FINAL CONFIG
     # ────────────────────────────────────────────────────────────
     return AppConfig(
         openai_api_key=openai_api_key,
