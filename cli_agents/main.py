@@ -22,14 +22,14 @@ def start(
 ):
     project_root = (path or Path(os.getcwd())).resolve()
     print(">>> CWD AT START:", project_root)
-    
+
     trust_folder_ui()
-    
+
     print(">>> CWD AFTER TRUST:", Path(os.getcwd()).resolve())
 
     config = load_config(project_root=project_root)
     set_config(config)
-    
+
     print(">>> CONFIG ROOT:", config.project_root)
 
     from openai import AsyncOpenAI
@@ -45,6 +45,7 @@ def start(
     agent = AIController(client, config, memory)
     ui = ChatUI(agent)
 
+    # agent.initialize() + agent.shutdown() are now managed inside ui.run()
     anyio.run(ui.run)
 
 

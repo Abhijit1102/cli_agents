@@ -20,14 +20,17 @@ from rich.status import Status
 from cli_agents.config.global_config import get_config
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
-from .diff_renderer import render_git_diff          # ← clean import
+from .diff_renderer import render_git_diff
 from cli_agents.sandbox import handle_sandbox_command
 from cli_agents.utils import generate_project_description
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
 from .slash_commands import ask_with_palette
 
-_DIFF_PREFIX = "\x00DIFF_RESULT:"
+_DIFF_PREFIX       = "\x00DIFF_RESULT:"
+_TOOL_START        = "\x00TOOL_START:"
+_MCP_TOOL_START    = "\x00MCP_TOOL_START:"
+_TOOL_DONE         = "\x00TOOL_DONE:"
 
 
 class ChatUI:
@@ -147,6 +150,23 @@ class ChatUI:
         with Live(LiveClock(), console=self.console, refresh_per_second=10, transient=True):
             time.sleep(duration)
 
+    def _render_mcp_servers(self) -> None:
+        """Show which MCP servers are currently connected."""
+        mcp = getattr(self.agent, "mcp", None)
+        if not mcp or not mcp.sessions:
+            self._render_system("No MCP servers connected.", A())
+            return
+        table = Table(
+            title="Connected MCP Servers",
+            box=box.MINIMAL_DOUBLE_HEAD,
+            header_style=f"bold {A()}",
+        )
+        table.add_column("Server", style=f"bold {A()}")
+        table.add_column("Status", style=f"{S()}")
+        for name in mcp.sessions:
+            table.add_row(name, "🟢 connected")
+        self.console.print(table)
+
     # ── /theme handler ────────────────────────────────────────────────────────
     def _handle_theme(self, cmd: str) -> None:
         parts = cmd.strip().split()
@@ -185,28 +205,37 @@ class ChatUI:
         with Live(renderer, console=self.console, refresh_per_second=12, transient=True):
             async for chunk in self.agent.handle_message(cmd):
 
-                if chunk.startswith("\x00TOOL_START:"):
+                # ── MCP tool starting ────────────────────────────────────────
+                if chunk.startswith(_MCP_TOOL_START):
                     _, rest = chunk.split(":", 1)
                     name, _, args = rest.partition(":")
-                    renderer.set_tool(name.strip(), args.strip())
+                    renderer.set_tool(name.strip(), args.strip(), is_mcp=True)
 
-                elif chunk.startswith("\x00TOOL_DONE:"):
+                # ── local tool starting ──────────────────────────────────────
+                elif chunk.startswith(_TOOL_START):
+                    _, rest = chunk.split(":", 1)
+                    name, _, args = rest.partition(":")
+                    renderer.set_tool(name.strip(), args.strip(), is_mcp=False)
+
+                # ── tool finished ────────────────────────────────────────────
+                elif chunk.startswith(_TOOL_DONE):
                     renderer.add_completed(chunk.split(":", 1)[1].strip())
 
+                # ── git diff payload ─────────────────────────────────────────
                 elif chunk.startswith(_DIFF_PREFIX):
                     diff_outputs.append(chunk[len(_DIFF_PREFIX):])
 
+                # ── regular prose ────────────────────────────────────────────
                 else:
                     content_parts.append(chunk)
 
             renderer.set_done()
 
-        # Render diffs outside the Live block — delegates to diff_renderer.py
         for diff_json in diff_outputs:
             render_git_diff(
                 diff_json,
                 console=self.console,
-                render_system_fn=self._render_system,   # pass error handler in
+                render_system_fn=self._render_system,
             )
 
         return "".join(content_parts)
@@ -215,93 +244,118 @@ class ChatUI:
     async def run(self) -> None:
         self.console.clear()
         self._render_header()
+
+        # ── initialise agent (loads MCP servers if configured) ────────────────
+        with Status(
+            "[bold yellow]⚙ Initialising agent…[/bold yellow]",
+            spinner="dots",
+            console=self.console,
+        ):
+            await self.agent.initialize()
+
+        # Show MCP status after init
+        mcp = getattr(self.agent, "mcp", None)
+        if mcp and mcp.sessions:
+            self._render_mcp_servers()
+        
         self._render_command_box()
 
-        while True:
-            try:
-                user_input = await anyio.to_thread.run_sync(
-                    lambda: ask_with_palette(self._get_prompt_label())
-                )
-            except (KeyboardInterrupt, EOFError):
-                self.console.print(Text("\nInterrupted. Shutting down...", style=f"bold {A()}"))
-                return
-
-            cmd = user_input.strip()
-            if not cmd:
-                continue
-
-            if cmd.lower() in {"exit", "quit"}:
-                self.console.print(Text("Session Closed. Goodbye!", style=f"bold {P()}"))
-                break
-
-            if cmd == "/clear":
-                self.console.clear(); self._render_header(); continue
-            if cmd == "/help":
-                self._render_command_box(); continue
-            if cmd == "/reset":
-                self.agent.reset(); self.history.clear()
-                self._render_system("Agent memory purged."); continue
-            if cmd == "/cwd":
-                self._render_system(f"CWD: {os.getcwd()}", P()); continue
-            if cmd == "/history":
-                if not self.history:
-                    self._render_system("No history in current session.")
-                else:
-                    self._render_system(
-                        "\n".join(f"{i+1}. {m}" for i, m in enumerate(self.history))
+        try:
+            while True:
+                try:
+                    user_input = await anyio.to_thread.run_sync(
+                        lambda: ask_with_palette(self._get_prompt_label())
                     )
-                continue
-            if cmd == "/usage":
-                self._render_usage(); continue
-            if cmd == "/clock":
-                self._render_live_clock(5.0); continue
-            if cmd.startswith("/theme"):
-                self._handle_theme(cmd); continue
-            if cmd.startswith("/sandbox"):
-                suffix = cmd[len("/sandbox"):].strip()
-                handle_sandbox_command(self, suffix)
-                continue
-            if cmd == "/config":
-                cfg = self.agent.config
-                msg = f"""
-            Model: {cfg.model}
-            Base URL: {cfg.openai_base_url or "default"}
-            Tavily: {"enabled" if cfg.tavily_api_key else "disabled"}
-            """
-                self._render_system(msg.strip(), P())
-                continue   
+                except (KeyboardInterrupt, EOFError):
+                    self.console.print(Text("\nInterrupted. Shutting down...", style=f"bold {A()}"))
+                    break
 
-            if cmd == "/init_project":
-                cfg = self.agent.config
+                cmd = user_input.strip()
+                if not cmd:
+                    continue
 
+                if cmd.lower() in {"exit", "quit"}:
+                    self.console.print(Text("Session Closed. Goodbye!", style=f"bold {P()}"))
+                    break
+
+                if cmd == "/clear":
+                    self.console.clear(); self._render_header(); continue
+                if cmd == "/help":
+                    self._render_command_box(); continue
+                if cmd == "/reset":
+                    self.agent.reset(); self.history.clear()
+                    self._render_system("Agent memory purged."); continue
+                if cmd == "/cwd":
+                    self._render_system(f"CWD: {os.getcwd()}", P()); continue
+                if cmd == "/mcp":
+                    self._render_mcp_servers(); continue
+                if cmd == "/history":
+                    if not self.history:
+                        self._render_system("No history in current session.")
+                    else:
+                        self._render_system(
+                            "\n".join(f"{i+1}. {m}" for i, m in enumerate(self.history))
+                        )
+                    continue
+                if cmd == "/usage":
+                    self._render_usage(); continue
+                if cmd == "/clock":
+                    self._render_live_clock(5.0); continue
+                if cmd.startswith("/theme"):
+                    self._handle_theme(cmd); continue
+                if cmd.startswith("/sandbox"):
+                    suffix = cmd[len("/sandbox"):].strip()
+                    handle_sandbox_command(self, suffix)
+                    continue
+                if cmd == "/config":
+                    cfg = self.agent.config
+                    msg = (
+                        f"Model:    {cfg.model}\n"
+                        f"Base URL: {cfg.openai_base_url or 'default'}\n"
+                        f"Tavily:   {'enabled' if cfg.tavily_api_key else 'disabled'}\n"
+                        f"MCP:      {str(cfg.mcp_config_path) if cfg.mcp_config_path else 'not configured'}"
+                    )
+                    self._render_system(msg.strip(), P())
+                    continue
+
+                if cmd == "/init_project":
+                    cfg = self.agent.config
+                    with Status(
+                        "[bold yellow]⚙ Scanning project • analysing • generating description…[/bold yellow]",
+                        spinner="dots",
+                        console=self.console,
+                    ):
+                        try:
+                            path = await generate_project_description(
+                                project_root=cfg.project_root,
+                                client=self.agent.client,
+                                model=cfg.model,
+                            )
+                        except Exception as e:
+                            self._render_system(f"❌ Failed to generate description: {e}", A())
+                            continue
+
+                    self._render_system(f"✅ PROJECT_DESCRIPTION.md written → {path}", S())
+                    continue
+
+                self._render_user(cmd)
+                self.history.append(cmd)
+
+                try:
+                    content = await self._run_with_live_status(cmd)
+                    if content.strip():
+                        self._render_assistant(content)
+                    else:
+                        self._render_system("Agent returned an empty response.", A())
+                except Exception as e:
+                    self._render_system(f"Execution Error: {str(e)}", A())
+
+        finally:
+            # ── always clean up MCP servers on exit ───────────────────────────
+            if hasattr(self.agent, "shutdown"):
                 with Status(
-                    "[bold yellow]⚙ Scanning project • analyzing • generating description...[/bold yellow]",
+                    "[bold yellow]⚙ Shutting down MCP servers…[/bold yellow]",
                     spinner="dots",
                     console=self.console,
                 ):
-                    try:
-                        path = await generate_project_description(
-                            project_root=cfg.project_root,
-                            client=self.agent.client,
-                            model=cfg.model,
-                        )
-                    except Exception as e:
-                        self._render_system(f"❌ Failed to generate description: {e}", A())
-                        continue
-
-                self._render_system(
-                    f"✅ PROJECT_DESCRIPTION.md written → {path}", S()
-                )
-                continue    
-
-            self._render_user(cmd)
-            self.history.append(cmd)
-
-            try:
-                content = await self._run_with_live_status(cmd)
-                if content.strip():
-                    self._render_assistant(content)
-                else:
-                    self._render_system("Agent returned an empty response.", A())
-            except Exception as e:
-                self._render_system(f"Execution Error: {str(e)}", A())
+                    await self.agent.shutdown()

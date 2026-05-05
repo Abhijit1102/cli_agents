@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Dict
 from cli_agents.config import AppConfig
 from cli_agents.memory import ConversationMemory
 from cli_agents.tools import TOOLS, execute_tool
+from cli_agents.core.mcp_manager import MCPManager
 
 
 class AIController:
@@ -13,7 +14,22 @@ class AIController:
         self.config = config
         self.memory = memory
         self.tools = TOOLS
+        self.mcp = None
         self.last_usage: Dict = {}
+
+    async def initialize(self):
+        """Call this once before handle_message starts."""
+        self.tools = list(TOOLS)
+
+        if self.config.mcp_config_path:
+            self.mcp = MCPManager(self.config.mcp_config_path)
+            mcp_tools = await self.mcp.start_servers()
+            self.tools.extend(mcp_tools)
+
+    async def shutdown(self):
+        """Cleanly shut down MCP servers."""
+        if self.mcp:
+            await self.mcp.shutdown()
 
     def reset(self) -> str:
         self.memory.reset()
@@ -27,7 +43,13 @@ class AIController:
         usage = getattr(response, "usage", None)
         self.last_usage = dict(usage) if usage else {}
 
+    def _is_mcp_tool(self, tool_name: str) -> bool:
+        return "__" in tool_name and self.mcp is not None
+
     async def _execute_tool_safe(self, tool_name: str, arguments: dict) -> str:
+        if self._is_mcp_tool(tool_name):
+            print("mcp :", tool_name, arguments)   # fixed typo: was `prin`
+            return await self.mcp.call_tool(tool_name, arguments)
         try:
             result = await anyio.to_thread.run_sync(
                 lambda: execute_tool(tool_name, arguments, self.config)
@@ -42,12 +64,13 @@ class AIController:
         user_input: str,
     ) -> AsyncGenerator[str, None]:
         """
-        Yields three kinds of chunks that ChatUI understands:
+        Yields these chunk kinds that ChatUI understands:
 
-        1. "\x00TOOL_START:<name>:<json_args>"  — tool is about to run
-        2. "\x00TOOL_DONE:<name>"               — tool finished
-        3. "\x00DIFF_RESULT:<json>"             — git diff payload
-        4. plain text                            — assistant prose
+        1. "\x00TOOL_START:<name>:<json_args>"   — local tool about to run
+        2. "\x00MCP_TOOL_START:<name>:<json_args>"— MCP tool about to run
+        3. "\x00TOOL_DONE:<name>"                — tool finished
+        4. "\x00DIFF_RESULT:<json>"              — git diff payload
+        5. plain text                             — assistant prose
         """
         if not user_input.strip():
             return
@@ -100,9 +123,13 @@ class AIController:
                 except Exception:
                     args = {}
 
-                # Signal UI: tool is starting
                 args_str = json.dumps(args, ensure_ascii=False)
-                yield f"\x00TOOL_START:{name}:{args_str}"
+
+                # Signal UI: use MCP sentinel for MCP tools, regular for local
+                if self._is_mcp_tool(name):
+                    yield f"\x00MCP_TOOL_START:{name}:{args_str}"
+                else:
+                    yield f"\x00TOOL_START:{name}:{args_str}"
 
                 # Run the tool
                 result = await self._execute_tool_safe(name, args)

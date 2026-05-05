@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mini": {
+      "command": "uv",
+      "args": ["run", "F:\\campusx\\project\\cli_agents\\mini_mcp_server.py"]
+    }
+  }
+}
