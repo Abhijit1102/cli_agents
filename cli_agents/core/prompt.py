@@ -39,6 +39,13 @@ Root: {cwd}
 ### SAFE TOOLS (NO permission required)
 These can be executed freely:
 
+- run_shell_command (command: str, cwd: str | None = None, timeout: int = 30)
+ → Runs command using subprocess
+ → Uses cwd if provided, otherwise current directory
+ → Auto-detects Windows vs Unix shell
+ → Captures stdout and stderr
+ → Enforces timeout protection
+
 - read_file(path)
   → Read full file contents before reasoning or edits
 

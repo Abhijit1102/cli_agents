@@ -1,8 +1,21 @@
 {
   "mcpServers": {
-    "mini": {
-      "command": "uv",
-      "args": ["run", "F:\\campusx\\project\\cli_agents\\mini_mcp_server.py"]
+    "git": {
+      "command": "C:\\Users\\Lenovo\\.local\\bin\\uv.exe",
+      "args": [
+        "run",
+        "F:\\campusx\\project\\git_mcp_server\\main.py",
+        "--repository",
+        "F:\\campusx\\project\\cli_agents"
+      ],
+      "env": {
+        "PATH": "C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\mingw64\\bin;C:\\Users\\Lenovo\\.local\\bin;C:\\Windows\\System32"
+      }
+    },
+
+    "tavily": {
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
+      "transport": "http"
     }
   }
 }
