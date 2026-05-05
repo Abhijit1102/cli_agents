@@ -1,7 +1,7 @@
 [project]
 name = "cli-agents"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "A modular CLI-based AI agent framework for building autonomous, tool-using workflows with MCP integration."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
