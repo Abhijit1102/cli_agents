@@ -1,123 +1,196 @@
 # CLI Agents
 
-A Python CLI agent that wraps an OpenAI-powered assistant with local tool execution and project-aware memory.
+`cli_agents` is an interactive Python terminal agent for exploring and working on a real project. It sends conversation history to an OpenAI-compatible chat API and gives the model local filesystem tools, shell execution, image analysis, and optional tools supplied by MCP servers.
 
-## Overview
+## What It Does
 
-`cli_agents` is a terminal application that lets you interact with an AI agent using natural language. It supports:
+- Rich terminal interface with live timestamps, status panels, Markdown, and tool progress
+- Short-term conversation memory for the current session
+- Project-aware system prompt containing the project root, filtered file tree, and optional instructions
+- Local tools for reading, writing, listing, searching, image analysis, shell commands, and diffs
+- Optional MCP integration over stdio, SSE, or streamable HTTP
+- Startup folder-trust prompt
+- Fuzzy slash-command palette that adapts to terminal size
 
-- file operations (`read_file`, `write_file`, `list_folder`, `search_project`)
-- image analysis for local files (`analyze_image`)
-- shell command execution (`run_shell_command`)
-- external knowledge lookup via Tavily (`tavily_search`)
-- conversational memory and usage tracking
-- a trusted folder prompt before enabling file and shell access
+Conversation history is not persisted to disk. `/history` shows only prompts from the current process.
 
-## Project Structure
+## Requirements and Install
 
-- `cli_agents/main.py` — Typer-based CLI entrypoint and application startup.
-- `cli_agents/config/settings.py` — environment loading and application configuration.
-- `cli_agents/core/agent.py` — AI controller that manages LLM calls and tool execution.
-- `cli_agents/ui/app.py` — Rich-powered terminal UI and command loop.
-- `cli_agents/memory/history.py` — conversation history and message assembly.
-- `cli_agents/tools/` — tool definitions for project inspection and shell execution.
+- Python 3.12 or newer
+- An OpenAI API key, or an OpenAI-compatible provider key
+- Dependencies from `requirements.txt` or `pyproject.toml`
 
-## Requirements
-
-- Python 3.12+
-- `anyio`
-- `openai`
-- `python-dotenv`
-- `Pillow`
-- `rich`
-- `typer`
-- `tavily-python`
-
-Optional:
-
-- `uv` for package installation and environment setup
-
-## Setup
-
-1. Create a `.env` file in the project root:
-
-```env
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_BASE_URL=https://api.openai.com/v1
-TAVILY_API_KEY=your_tavily_api_key
-MODEL=openai/gpt-4o-mini
-```
-
-2. Install dependencies:
-
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-If you prefer `uv`, install it and use it to install the project dependencies:
+Or install the package and its dependencies:
 
-```bash
-pip install uv
-uv install
-```
-
-> If there is no `requirements.txt`, install from `pyproject.toml`:
-
-```bash
+```powershell
 pip install .
 ```
 
-## Run
+The package also defines the `cli_agents` command. `uv` can be used instead of `pip`.
 
-Start the CLI agent with:
+## Configuration
 
-```bash
+Configuration is read from the project root passed to `start`, or from the current directory when no path is supplied. Create a `.cli_agents` directory in that project.
+
+### `.cli_agents/env.json`
+
+This file must contain JSON, not dotenv syntax:
+
+```json
+{
+  "OPENAI_API_KEY": "your-api-key",
+  "OPENAI_BASE_URL": "https://api.openai.com/v1",
+  "MODEL": "gpt-4o-mini"
+}
+```
+
+Environment variables are also accepted. Values from `env.json` are added only when the environment does not already define them.
+
+| Setting | Required | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Yes | Main chat API credential |
+| `OPENAI_BASE_URL` | No | OpenAI-compatible API endpoint |
+| `MODEL` | No | Chat model; defaults to `openai/gpt-4o-mini` |
+
+### Other project files
+
+- `.cli_agents/settings.json`: JSON settings; general values take precedence over environment variables.
+- `.cli_agents/CLI_AGENT.md`: project-specific instructions inserted into the system prompt.
+- `.cli_agents/mcp.config.json`: enables MCP only when this exact file exists.
+
+Example MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "python",
+      "args": ["path/to/server.py"]
+    },
+    "remote-tools": {
+      "transport": "sse",
+      "url": "https://example.com/mcp",
+      "headers": {"Authorization": "Bearer your-token"}
+    },
+    "http-tools": {
+      "transport": "streamable-http",
+      "url": "https://example.com/mcp",
+      "api_key": "your-token"
+    }
+  }
+}
+```
+
+MCP servers are initialized at startup, retried up to three times, and disconnected when the session ends. MCP tools are exposed as `server_name__tool_name`. Connection initialization has a 15-second timeout and tool calls have a 60-second timeout.
+
+## Start
+
+Run against the current directory:
+
+```powershell
 python -m cli_agents.main start
 ```
 
-Or if the package is installed as a script:
+Run against another project:
 
-```bash
-cli_agents start
+```powershell
+python -m cli_agents.main start C:\path\to\project
 ```
 
-## Available Commands
+Startup resolves the project, asks for folder trust, loads configuration, builds the project-aware prompt, creates the OpenAI client, connects MCP servers, and starts the interactive UI. Answering `n` to the trust prompt exits immediately.
 
-Inside the CLI session, use:
+## Slash Commands
 
-- `/help` — show built-in commands
-- `/reset` — reset conversation history
-- `/usage` — show the last LLM usage stats
-- `/cwd` — print current working directory
-- `/clear` — clear the screen
-- `/theme` — list available themes
-- `/theme <name>` — switch active theme instantly, e.g. `/theme purple`
-- `exit` / `quit` — exit the session
+Type `/` to open the fuzzy command palette. Use arrow keys and Enter to select a command.
 
-## Security
+| Command | Purpose |
+| --- | --- |
+| `/help` | Show the command registry |
+| `/reset` | Clear conversation memory and usage data |
+| `/usage` | Show the latest API usage object |
+| `/cwd` | Show the process working directory |
+| `/history` | Replay prompts from this session |
+| `/clear` | Clear and redraw the terminal |
+| `/clock` | Show a five-second live clock |
+| `/mcp` | Show connected MCP servers |
+| `/config` | Show model, base URL, and MCP status |
+| `/theme` | List available themes |
+| `/theme <name>` | Switch to `cyan`, `green`, `purple`, `yellow`, `orange`, `pink`, or `white` |
+| `/init_project` | Scan the project and write `.cli_agents/PROJECT_DESCRIPTION.md` |
+| `/sandbox ...` | Registered, but its handler is not currently included in the UI module |
+| `exit`, `quit` | Shut down MCP connections and exit |
 
-On startup, the app prompts "Trust this folder and enable file/shell access?". If you decline, the agent exits immediately.
+## Built-in Tools
+
+The model chooses these tools during a normal message. `AIController` executes them and appends each result to the conversation.
+
+| Tool | Behavior |
+| --- | --- |
+| `read_file(path)` | Reads a UTF-8 text file |
+| `write_file(path, content)` | Creates parent folders and creates or overwrites a UTF-8 file |
+| `list_folder(path)` | Lists files and directories, with folders first |
+| `search_project(query, root)` | Searches supported text files recursively and returns paths and excerpts |
+| `analyze_image(path)` | Sends PNG, JPEG, GIF, or WebP data to `gpt-4o-mini` for analysis |
+| `run_shell_command(command, cwd, timeout)` | Runs a platform shell command with a 30-second default timeout |
+| `git_diff(old_code, new_code, file_path)` | Produces JSON containing a unified diff and line counts |
+
+The agent allows up to four model/tool reasoning rounds per message. Empty input is ignored, and `/reset` is handled without an API call.
+
+## Source Layout
+
+```text
+cli_agents/
+├── main.py                 Typer entry point and application wiring
+├── utils.py                Ignore rules, project tree, and project-description generation
+├── config/                 AppConfig and process-wide configuration
+├── core/                   Agent loop, system prompt, and MCP gateway
+├── memory/history.py       In-memory OpenAI message history
+├── tools/                  Filesystem, shell, and diff tools
+└── ui/                     Rich UI, trust prompt, palette, themes, and renderers
+```
+
+Important modules:
+
+- `main.py` wires configuration, client, memory, agent, and UI together.
+- `core/agent.py` performs model calls, routes local/MCP tools, records usage, and shuts down MCP.
+- `core/prompt.py` builds the system prompt from the project tree and `CLI_AGENT.md`.
+- `memory/history.py` preserves system, user, assistant, and tool messages in OpenAI format.
+- `tools/__init__.py` registers tool schemas and dispatches tool functions.
+- `ui/app.py` handles commands, live status, responses, diffs, and cleanup.
+
+## Request Flow
+
+```text
+User input
+  -> ChatUI command handling
+  -> AIController.handle_message()
+  -> ConversationMemory + OpenAI chat.completions
+  -> optional local or MCP tool call
+  -> tool result appended to memory
+  -> another model round or final response
+  -> Rich renderer
+```
+
+Assistant messages containing `tool_calls` are preserved, followed by one tool message per result. The latest API usage is retained for `/usage`.
+
+## Ignore Rules
+
+The project tree and `/init_project` scan skip version-control folders, virtual environments, caches, build output, `node_modules`, `.sandbox`, `.env*` files, binary/media files, lock files, and other generated artifacts. `search_project` searches only `.py`, `.md`, `.txt`, `.json`, `.toml`, `.yaml`, `.yml`, and `.ini` files.
+
+## Security and Current Notes
+
+The trust prompt is a warning, not a sandbox. After approval, `write_file` and `run_shell_command` execute with the current user's permissions. Review tool requests and do not commit API keys.
+
+- Tavily search is provided through the configured MCP server rather than a direct Python dependency.
+- `/init_project` writes `PROJECT_DESCRIPTION.md`, while prompt loading reads `CLI_AGENT.md`; the generated file is not loaded automatically.
+- No test files are currently included, so setup and behavior should be verified manually.
 
 ## License
 
-MIT License
-
-MIT License © 2024
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-out of or in connection with the Software or the use or other dealings in the
-Software.
+This project uses the MIT License. Anyone may use, copy, modify, distribute,
+sublicense, and sell the software, provided the original copyright notice and
+license text are included. See [LICENSE](LICENSE) for the complete terms.

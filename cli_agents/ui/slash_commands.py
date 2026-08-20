@@ -40,12 +40,6 @@ COMMANDS: List[SlashCommand] = [
     SlashCommand("theme white", "Switch to white theme", aliases=["white"]),
     SlashCommand("config", "Display current MODEL and environment (.env) settings used by CLI_agents"),
     SlashCommand("init_project",  "Read codebase and write PROJECT_DESCRIPTION.md"),
-
-    SlashCommand(
-        "sandbox",
-        "Manage sandbox environments (create/run/exec/destroy/list/status)",
-        aliases=["sb"]
-    ),
 ]
 
 

@@ -21,7 +21,6 @@ from cli_agents.config.global_config import get_config
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
 from .diff_renderer import render_git_diff
-from cli_agents.sandbox import handle_sandbox_command
 from cli_agents.utils import generate_project_description
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
@@ -312,7 +311,6 @@ class ChatUI:
                     msg = (
                         f"Model:    {cfg.model}\n"
                         f"Base URL: {cfg.openai_base_url or 'default'}\n"
-                        f"Tavily:   {'enabled' if cfg.tavily_api_key else 'disabled'}\n"
                         f"MCP:      {str(cfg.mcp_config_path) if cfg.mcp_config_path else 'not configured'}"
                     )
                     self._render_system(msg.strip(), P())

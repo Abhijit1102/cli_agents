@@ -6,7 +6,6 @@ from .fs_tools import (
     analyze_image, list_folder, read_file, search_project, write_file,
 )
 from .shell_tools import RUN_COMMAND_TOOL, run_shell_command
-from .tavily import TAVILY_SEARCH_TOOL, tavily_search
 from .show_diff import GIT_DIFF_TOOL, git_diff
 
 # ───────────────────────────────
@@ -20,7 +19,6 @@ TOOLS = [
     SEARCH_PROJECT_TOOL,
     ANALYZE_IMAGE_TOOL,
     RUN_COMMAND_TOOL,
-    TAVILY_SEARCH_TOOL,
     GIT_DIFF_TOOL,
 ]
 
@@ -35,7 +33,6 @@ _EXECUTORS = {
     "search_project": search_project,
     "analyze_image": analyze_image,
     "run_shell_command": run_shell_command,
-    "tavily_search": tavily_search,
     "git_diff": git_diff,
 }
 
