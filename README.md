@@ -140,43 +140,6 @@ The model chooses these tools during a normal message. `AIController` executes t
 
 The agent allows up to four model/tool reasoning rounds per message. Empty input is ignored, and `/reset` is handled without an API call.
 
-## Source Layout
-
-```text
-cli_agents/
-├── main.py                 Typer entry point and application wiring
-├── utils.py                Ignore rules, project tree, and project-description generation
-├── config/                 AppConfig and process-wide configuration
-├── core/                   Agent loop, system prompt, and MCP gateway
-├── memory/history.py       In-memory OpenAI message history
-├── tools/                  Filesystem, shell, and diff tools
-└── ui/                     Rich UI, trust prompt, palette, themes, and renderers
-```
-
-Important modules:
-
-- `main.py` wires configuration, client, memory, agent, and UI together.
-- `core/agent.py` performs model calls, routes local/MCP tools, records usage, and shuts down MCP.
-- `core/prompt.py` builds the system prompt from the project tree and `CLI_AGENT.md`.
-- `memory/history.py` preserves system, user, assistant, and tool messages in OpenAI format.
-- `tools/__init__.py` registers tool schemas and dispatches tool functions.
-- `ui/app.py` handles commands, live status, responses, diffs, and cleanup.
-
-## Request Flow
-
-```text
-User input
-  -> ChatUI command handling
-  -> AIController.handle_message()
-  -> ConversationMemory + OpenAI chat.completions
-  -> optional local or MCP tool call
-  -> tool result appended to memory
-  -> another model round or final response
-  -> Rich renderer
-```
-
-Assistant messages containing `tool_calls` are preserved, followed by one tool message per result. The latest API usage is retained for `/usage`.
-
 ## Ignore Rules
 
 The project tree and `/init_project` scan skip version-control folders, virtual environments, caches, build output, `node_modules`, `.sandbox`, `.env*` files, binary/media files, lock files, and other generated artifacts. `search_project` searches only `.py`, `.md`, `.txt`, `.json`, `.toml`, `.yaml`, `.yml`, and `.ini` files.
