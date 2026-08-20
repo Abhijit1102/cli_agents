@@ -8,7 +8,7 @@ from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ class MCPGateway:
         # ── STREAMABLE HTTP ────────────────────────
         elif transport == "http":
             conn = await self.exit_stack.enter_async_context(
-                streamablehttp_client(cfg["url"], headers=headers)
+                streamable_http_client(cfg["url"], headers=headers)
             )
 
         else:

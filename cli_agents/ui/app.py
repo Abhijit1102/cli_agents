@@ -21,6 +21,7 @@ from cli_agents.config.global_config import get_config
 from .clock import animated_timestamp, LiveClock, render_theme_preview
 from .renderers import AgentStatusRenderer
 from .diff_renderer import render_git_diff
+from .errors import render_error
 from cli_agents.utils import generate_project_description
 from .theme import THEME, P, D, A, S, W
 from .utils import CONSOLE, local_tz
@@ -30,6 +31,7 @@ _DIFF_PREFIX       = "\x00DIFF_RESULT:"
 _TOOL_START        = "\x00TOOL_START:"
 _MCP_TOOL_START    = "\x00MCP_TOOL_START:"
 _TOOL_DONE         = "\x00TOOL_DONE:"
+_ERROR_PREFIX      = "\x00ERROR:"
 
 
 class ChatUI:
@@ -200,6 +202,7 @@ class ChatUI:
         renderer = AgentStatusRenderer()
         content_parts: List[str] = []
         diff_outputs: List[str] = []
+        error_outputs: List[str] = []
 
         with Live(renderer, console=self.console, refresh_per_second=12, transient=True):
             async for chunk in self.agent.handle_message(cmd):
@@ -224,6 +227,10 @@ class ChatUI:
                 elif chunk.startswith(_DIFF_PREFIX):
                     diff_outputs.append(chunk[len(_DIFF_PREFIX):])
 
+                # ── formatted error payload ───────────────────────────────
+                elif chunk.startswith(_ERROR_PREFIX):
+                    error_outputs.append(chunk[len(_ERROR_PREFIX):].strip())
+
                 # ── regular prose ────────────────────────────────────────────
                 else:
                     content_parts.append(chunk)
@@ -235,6 +242,13 @@ class ChatUI:
                 diff_json,
                 console=self.console,
                 render_system_fn=self._render_system,
+            )
+
+        for error_message in error_outputs:
+            render_error(
+                RuntimeError(error_message),
+                context="Agent execution",
+                console=self.console,
             )
 
         return "".join(content_parts)
@@ -250,7 +264,11 @@ class ChatUI:
             spinner="dots",
             console=self.console,
         ):
-            await self.agent.initialize()
+            try:
+                await self.agent.initialize()
+            except Exception as error:
+                render_error(error, context="Agent initialization", console=self.console)
+                return
 
         # Show MCP status after init
         mcp = getattr(self.agent, "mcp", None)
@@ -330,7 +348,7 @@ class ChatUI:
                                 model=cfg.model,
                             )
                         except Exception as e:
-                            self._render_system(f"❌ Failed to generate description: {e}", A())
+                            render_error(e, context="Project initialization", console=self.console)
                             continue
 
                     self._render_system(f"✅ PROJECT_DESCRIPTION.md written → {path}", S())
@@ -346,7 +364,7 @@ class ChatUI:
                     else:
                         self._render_system("Agent returned an empty response.", A())
                 except Exception as e:
-                    self._render_system(f"Execution Error: {str(e)}", A())
+                    render_error(e, context="Message execution", console=self.console)
 
         finally:
             # ── always clean up MCP servers on exit ───────────────────────────

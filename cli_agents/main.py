@@ -8,7 +8,7 @@ from cli_agents.config.global_config import set_config
 from cli_agents.config import load_config
 from cli_agents.core import AIController, generate_system_prompt
 from cli_agents.memory import ConversationMemory
-from cli_agents.ui import ChatUI, trust_folder_ui
+from cli_agents.ui import ChatUI, render_error, trust_folder_ui
 
 app = typer.Typer()
 
@@ -27,26 +27,27 @@ def start(
 
     print(">>> CWD AFTER TRUST:", Path(os.getcwd()).resolve())
 
-    config = load_config(project_root=project_root)
-    set_config(config)
+    try:
+        config = load_config(project_root=project_root)
+        set_config(config)
 
-    print(">>> CONFIG ROOT:", config.project_root)
+        from openai import AsyncOpenAI
 
-    from openai import AsyncOpenAI
+        client = AsyncOpenAI(
+            api_key=config.openai_api_key,
+            base_url=config.openai_base_url,
+        )
+        memory = ConversationMemory(
+            system_prompt=generate_system_prompt(config)
+        )
+        agent = AIController(client, config, memory)
+        ui = ChatUI(agent)
 
-    client = AsyncOpenAI(
-        api_key=config.openai_api_key,
-        base_url=config.openai_base_url,
-    )
-    memory = ConversationMemory(
-        system_prompt=generate_system_prompt(config)
-    )
-
-    agent = AIController(client, config, memory)
-    ui = ChatUI(agent)
-
-    # agent.initialize() + agent.shutdown() are now managed inside ui.run()
-    anyio.run(ui.run)
+        # agent.initialize() + agent.shutdown() are managed inside ui.run().
+        anyio.run(ui.run)
+    except Exception as error:
+        render_error(error, context="Startup")
+        raise typer.Exit(code=1) from None
 
 
 if __name__ == "__main__":

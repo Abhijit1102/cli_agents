@@ -30,7 +30,38 @@ Or install the package and its dependencies:
 pip install .
 ```
 
-The package also defines the `cli_agents` command. `uv` can be used instead of `pip`.
+### Install with uv
+
+Build the package from the project root:
+
+```powershell
+uv build
+```
+
+Install the local package as a global `uv` tool so the command is available from any terminal directory:
+
+```powershell
+uv tool install .
+```
+
+If the package is already installed, update it after making changes:
+
+```powershell
+uv tool install --force .
+```
+
+The package defines the `cli_agents` command. Verify the installation and start it with:
+
+```powershell
+cli_agents --help
+cli_agents
+```
+
+To install from the built wheel instead:
+
+```powershell
+uv tool install dist\cli_agents-*.whl
+```
 
 ## Configuration
 
@@ -92,13 +123,13 @@ MCP servers are initialized at startup, retried up to three times, and disconnec
 Run against the current directory:
 
 ```powershell
-python -m cli_agents.main start
+python -m cli_agents.main
 ```
 
 Run against another project:
 
 ```powershell
-python -m cli_agents.main start C:\path\to\project
+cli_agents C:\path\to\project
 ```
 
 Startup resolves the project, asks for folder trust, loads configuration, builds the project-aware prompt, creates the OpenAI client, connects MCP servers, and starts the interactive UI. Answering `n` to the trust prompt exits immediately.

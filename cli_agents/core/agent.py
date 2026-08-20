@@ -10,6 +10,8 @@ from cli_agents.tools import TOOLS, execute_tool
 # 👉 Use Gateway (recommended)
 from cli_agents.core.mcp_manager import MCPGateway
 
+_ERROR_PREFIX = "\x00ERROR:"
+
 
 class AIController:
     def __init__(self, client: Any, config: AppConfig, memory: ConversationMemory):
@@ -115,7 +117,7 @@ class AIController:
                     tool_choice="auto",
                 )
             except Exception as exc:
-                yield f"[API Error] {exc}"
+                yield f"{_ERROR_PREFIX}API request: {exc}"
                 return
 
             await self._record_usage(response)
@@ -155,6 +157,9 @@ class AIController:
 
                 # EXECUTE TOOL
                 result = await self._execute_tool_safe(name, args)
+
+                if result.startswith(("Error", "[Tool Error:", "[Timeout]")):
+                    yield f"{_ERROR_PREFIX}Tool '{name}': {result}"
 
                 # SPECIAL: git diff
                 if name == "git_diff":
