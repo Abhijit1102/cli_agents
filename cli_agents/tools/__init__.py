@@ -1,62 +1,48 @@
 import inspect
-
-from .fs_tools import (
-    ANALYZE_IMAGE_TOOL, LIST_FOLDER_TOOL, READ_FILE_TOOL,
-    SEARCH_PROJECT_TOOL, WRITE_FILE_TOOL,
-    analyze_image, list_folder, read_file, search_project, write_file,
-)
-from .shell_tools import RUN_COMMAND_TOOL, run_shell_command
-from .show_diff import GIT_DIFF_TOOL, git_diff
+import importlib
+import pkgutil
+from pydantic import ValidationError
+from .registry import registry
 
 # ───────────────────────────────
-# Tool Definitions (for LLM)
+# Dynamic Tool Loading
 # ───────────────────────────────
 
-TOOLS = [
-    READ_FILE_TOOL,
-    WRITE_FILE_TOOL,
-    LIST_FOLDER_TOOL,
-    SEARCH_PROJECT_TOOL,
-    ANALYZE_IMAGE_TOOL,
-    RUN_COMMAND_TOOL,
-    GIT_DIFF_TOOL,
-]
+for loader, module_name, is_pkg in pkgutil.walk_packages(__path__):
+    if module_name != "registry":
+        importlib.import_module(f".{module_name}", package="cli_agents.tools")
+
+TOOLS = registry.get_openai_schemas()
 
 # ───────────────────────────────
-# Tool Executors (actual functions)
-# ───────────────────────────────
-
-_EXECUTORS = {
-    "read_file": read_file,
-    "write_file": write_file,
-    "list_folder": list_folder,
-    "search_project": search_project,
-    "analyze_image": analyze_image,
-    "run_shell_command": run_shell_command,
-    "git_diff": git_diff,
-}
-
-# ───────────────────────────────
-# Executor Engine (with DI)
+# Executor Engine (with Validation & DI)
 # ───────────────────────────────
 
 def execute_tool(name: str, args: dict, config=None) -> str:
-    executor = _EXECUTORS.get(name)
+    tool_def = registry.get_definition(name)
 
-    if executor is None:
+    if tool_def is None:
         return f"Error: unknown tool '{name}'"
 
     try:
-        sig = inspect.signature(executor)
+        # 1. Pydantic Validation
+        # This ensures that inputs are converted to correct types (e.g. "10" -> 10)
+        # and raises ValidationError if required fields are missing.
+        validated_args = tool_def.model(**args).model_dump()
 
-        # ✅ Inject config automatically if required
+        # 2. Signature-based Injection
+        sig = inspect.signature(tool_def.func)
+        
+        # Inject config if the function asks for it
         if "config" in sig.parameters:
-            return executor(config=config, **args)
+            return tool_def.func(config=config, **validated_args)
 
-        return executor(**args)
+        return tool_def.func(**validated_args)
 
+    except ValidationError as exc:
+        return f"Error: invalid arguments for {name}. {exc}"
     except TypeError as exc:
-        return f"Error: invalid arguments for {name}: {exc}"
+        return f"Error: argument mismatch for {name}: {exc}"
     except Exception as exc:
         return f"Error executing {name}: {exc}"
 

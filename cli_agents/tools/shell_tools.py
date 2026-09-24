@@ -1,26 +1,12 @@
 import os
-import shlex
 import subprocess
 from pathlib import Path
+from .registry import tool
 
-RUN_COMMAND_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "run_shell_command",
-        "description": "Run a shell command in the project environment.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Command to execute."},
-                "cwd": {"type": "string", "description": "Working directory for the command."},
-                "timeout": {"type": "integer", "description": "Timeout in seconds."},
-            },
-            "required": ["command"],
-        },
-    },
-}
-
-
+@tool(
+    name="run_shell_command",
+    description="Run a shell command in the project environment. Returns stdout and stderr separately.",
+)
 def run_shell_command(command: str, cwd: str | None = None, timeout: int = 30) -> str:
     if not command.strip():
         return "Error: command is empty."
@@ -44,8 +30,18 @@ def run_shell_command(command: str, cwd: str | None = None, timeout: int = 30) -
     except Exception as exc:
         return f"Error running command: {exc}"
 
-    output = result.stdout.strip()
-    error = result.stderr.strip()
-    if result.returncode != 0:
-        return f"Error ({result.returncode}): {error or output}"
-    return output or "✔ Command completed successfully."
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    
+    output_parts = [f"Exit Code: {result.returncode}"]
+    
+    if stdout:
+        output_parts.append(f"\nSTDOUT:\n{stdout}")
+    
+    if stderr:
+        output_parts.append(f"\nSTDERR:\n{stderr}")
+        
+    if not stdout and not stderr and result.returncode == 0:
+        return "✔ Command completed successfully (no output)."
+        
+    return "\n".join(output_parts)

@@ -2,7 +2,8 @@ import os
 import ast
 from pathlib import Path
 import seedir as sd
-from .ignore import should_ignore, IGNORE_DIRS, IGNORE_FILES
+from .ignore import should_ignore
+from .. import constants
 
 def get_file_summary(path: Path) -> str:
     """Extracts classes and functions from a Python file for AI context."""
@@ -34,8 +35,8 @@ def build_tree(start: str | os.PathLike = ".", prefix: str = "", include_summari
             path=start,
             style="lines",
             printout=False,
-            exclude_folders=list(IGNORE_DIRS),
-            exclude_files=list(IGNORE_FILES),
+            exclude_folders=list(constants.IGNORE_DIRS),
+            exclude_files=list(constants.IGNORE_FILES),
         )
         return tree_str.splitlines()
 

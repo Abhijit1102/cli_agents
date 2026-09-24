@@ -9,3 +9,5 @@ mimetype>=0.1.5
 tzdata>=2026.2
 prompt-toolkit>=3.0.52
 mcp>=1.27.0
+jedi
+rigrep

@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 # ── directories to never descend into ─────────────────────────────────────
 IGNORE_DIRS: set[str] = {
     ".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "env", 
@@ -28,10 +25,3 @@ IGNORE_SUFFIXES: tuple[str, ...] = (
     ".pkl", ".h5", ".parquet", ".pdf", ".docx", ".xlsx", ".pptx", 
     ".swp", ".swo", ".bak", ".orig", ".stackdump", ".wsb",
 )
-
-def should_ignore(name: str, *, is_dir: bool = False) -> bool:
-    if name.startswith(IGNORE_PREFIXES):
-        return True
-    if is_dir:
-        return name in IGNORE_DIRS
-    return name in IGNORE_FILES or name.endswith(IGNORE_SUFFIXES)
