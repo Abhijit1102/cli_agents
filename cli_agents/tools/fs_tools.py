@@ -33,7 +33,7 @@ WRITE_FILE_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Target file path."},
+                "path": {"type": "string", "description": "File path to read."},
                 "content": {"type": "string", "description": "File contents."},
             },
             "required": ["path", "content"],
@@ -49,7 +49,7 @@ LIST_FOLDER_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path to list."},
+                "path": {"type": "string", "description": "File path to read."},
             },
             "required": ["path"],
         },
@@ -182,10 +182,16 @@ def analyze_image(path: str) -> str:
             base64_image = base64.b64encode(img_file.read()).decode("utf-8")
 
         config = get_config()  
+        
+        # IMAGE_MODEL check
+        image_model = config.image_model
+        if not image_model:
+            return "Error: IMAGE_MODEL is not configured. Please add 'IMAGE_MODEL' to .cli_agents/env.json"
+
         client = OpenAI(api_key=config.openai_api_key)    
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=image_model,
             messages=[
                 {
                     "role": "user",

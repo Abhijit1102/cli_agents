@@ -5,6 +5,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from contextlib import AsyncExitStack
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
@@ -118,8 +119,11 @@ class MCPGateway:
 
         # ── STREAMABLE HTTP ────────────────────────
         elif transport == "http":
+            http_client = await self.exit_stack.enter_async_context(
+                httpx.AsyncClient(headers=headers)
+            )
             conn = await self.exit_stack.enter_async_context(
-                streamable_http_client(cfg["url"], headers=headers)
+                streamable_http_client(cfg["url"], http_client=http_client)
             )
 
         else:
@@ -263,12 +267,16 @@ class MCPGateway:
     # TOOL FORMATTER  (OpenAI-compatible schema)
     # ─────────────────────────────────────────────
     def _to_openai(self, server: str, tool) -> Dict:
+        input_schema = getattr(tool, "inputSchema", None)
+        if input_schema is None:
+            input_schema = getattr(tool, "input_schema", None)
+
         return {
             "type": "function",
             "function": {
                 "name":        f"{server}__{tool.name}",
                 "description": tool.description or "",
-                "parameters":  tool.inputSchema or {"type": "object"},
+                "parameters":  input_schema or {"type": "object"},
             },
         }
 

@@ -4,7 +4,8 @@ from cli_agents.utils import build_tree
 
 def generate_system_prompt(config: AppConfig) -> str:
     cwd = config.project_root.resolve()
-    tree = build_tree(cwd)
+    # Use semantic summaries to give the AI a functional map of the project
+    tree = build_tree(cwd, include_summaries=True)
     tree_str = f"{cwd.name}/\n" + "\n".join(tree) if tree else "(empty)"
 
     project_section = (
@@ -29,10 +30,18 @@ Root: {cwd}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━ CORE IDENTITY ━━━━━━━━━━━
-- You are deterministic, minimal, and action-oriented.
+- You are a deterministic, minimal, and action-oriented software architect.
+- You treat the codebase as a graph of interconnected logic, not just a list of files.
 - You collaborate: you propose changes, user approves.
 - You NEVER hallucinate files, paths, or system state.
 - You only rely on workspace tree + tool outputs.
+
+━━━━━━━━━━━ COGNITIVE WORKFLOW (THINKING PROCESS) ━━━━━━━━━━━
+Before suggesting any change, you MUST:
+1. TRACE: Identify the entry point of the change and trace its impact through the codebase.
+2. ANALYZE: Check the "Semantic Tree" above to identify related classes or functions in other files.
+3. VERIFY: Use `read_file` to confirm the current implementation of all touched components.
+4. PROPOSE: Create a cohesive plan that maintains architectural consistency.
 
 ━━━━━━━━━━━ TOOL SET (ALL AVAILABLE TOOLS) ━━━━━━━━━━━
 
@@ -57,9 +66,6 @@ These can be executed freely:
 
 - analyze_image(path)
   → Analyze screenshots, images, diagrams
-
-- tavily_search(query)
-  → Fetch external documentation or web results
 
 ---
 

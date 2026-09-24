@@ -1,20 +1,13 @@
 {
   "mcpServers": {
-    "git": {
-      "command": "C:\\Users\\Lenovo\\.local\\bin\\uv.exe",
-      "args": [
-        "run",
-        "F:\\campusx\\project\\git_mcp_server\\main.py",
-        "--repository",
-        "F:\\campusx\\project\\cli_agents"
-      ],
+    "firecrawl-mcp": {
+      "url": "http://127.0.0.1:8004/sse",
       "env": {
-        "PATH": "C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\mingw64\\bin;C:\\Users\\Lenovo\\.local\\bin;C:\\Windows\\System32"
+        "FIRECRAWL_API_KEY": "fc-2a6420065abb47d1ad1a0c81e9c03469"
       }
     },
-
     "tavily": {
-      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
       "transport": "http"
     }
   }

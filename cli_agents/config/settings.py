@@ -15,6 +15,7 @@ class AppConfig:
     project_root: Path
     project_instructions: Optional[str] = None
     mcp_config_path: Optional[Path] = None
+    image_model: Optional[str] = None
 
 
 # ────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ def load_config(project_root: Path | None = None) -> AppConfig:
     project_description_path = dot_folder / "CLI_AGENT.md"
     mcp_json_path = dot_folder / "mcp.config.json"
 
-    # Load the JSON project configuration without overriding environment values.
+    # Load the JSON project configuration
     env_config = {}
     if env_json_path.exists():
         try:
@@ -46,10 +47,6 @@ def load_config(project_root: Path | None = None) -> AppConfig:
         if not isinstance(env_config, dict):
             raise RuntimeError("Invalid env.json: expected a JSON object")
 
-        for key, value in env_config.items():
-            if value is not None:
-                os.environ.setdefault(key, str(value))
-
     # 2. Load JSON settings
     json_config = {}
     if settings_path.exists():
@@ -59,9 +56,13 @@ def load_config(project_root: Path | None = None) -> AppConfig:
         except Exception as e:
             raise RuntimeError(f"Invalid settings.json: {e}")
 
-    # Helper to get config from JSON first, then Environment
+    # Helper to get config with priority:
+    # 1. settings.json (Explicit overrides)
+    # 2. env.json (Project-specific env)
+    # 3. System Environment Variables
+    # 4. Default value
     def get(key: str, default: Optional[str] = None):
-        return json_config.get(key) or os.getenv(key) or default
+        return json_config.get(key) or env_config.get(key) or os.getenv(key) or default
 
     # ────────────────────────────────────────────────────────────
     # 3. MCP CONFIG (Strict File Check)
@@ -77,8 +78,7 @@ def load_config(project_root: Path | None = None) -> AppConfig:
     # 4. REQUIRED: OpenAI API Key
     # ────────────────────────────────────────────────────────────
     openai_api_key = (
-        env_config.get("OPENAI_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
+        get("OPENAI_API_KEY")
         or ""
     ).strip()
 
@@ -110,4 +110,5 @@ def load_config(project_root: Path | None = None) -> AppConfig:
         project_root=project_root,
         project_instructions=project_instructions,
         mcp_config_path=mcp_config_path,
+        image_model=get("IMAGE_MODEL"),
     )

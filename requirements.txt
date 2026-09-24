@@ -1,4 +1,5 @@
 anyio>=4.13.0
+httpx>=0.27.1
 openai>=2.32.0
 python-dotenv>=1.2.2
 Pillow>=10.0.0
