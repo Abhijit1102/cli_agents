@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, get_type_hints
@@ -52,32 +53,36 @@ class ToolRegistry:
     def register(self, name: str, description: str):
         """
         Decorator to register a function as a tool.
-        The schema is automatically derived from function type hints.
+        The schema is automatically derived from function type hints and defaults.
         """
 
         def wrapper(func: Callable):
-            # 1. Extract type hints
+            # 1. Extract type hints and signature defaults
             hints = get_type_hints(func)
+            sig = inspect.signature(func)
 
             # 2. Build OpenAI parameters schema
             properties = {}
             required = []
 
-            for param_name, param_type in hints.items():
-                # Skip internal injection parameters and the return annotation
+            for param_name, param in sig.parameters.items():
+                # Skip internal injection parameters
                 if param_name in EXCLUDED_PARAMS:
                     continue
 
+                param_type = hints.get(param_name, Any)
                 properties[param_name] = {
                     "type": _python_type_to_openai(param_type),
                     "description": f"The {param_name} parameter.",
                 }
 
-                # Treat non-Optional hints as required
-                is_optional = hasattr(param_type, "__origin__") and type(
+                # A parameter is optional if it has a default value OR is typed as Optional
+                has_default = param.default is not inspect.Parameter.empty
+                is_optional_type = hasattr(param_type, "__origin__") and type(
                     None
                 ) in getattr(param_type, "__args__", [])
-                if not is_optional:
+                
+                if not (has_default or is_optional_type):
                     required.append(param_name)
 
             parameters = {
@@ -86,12 +91,20 @@ class ToolRegistry:
                 "required": required,
             }
 
-            # 3. Create a Pydantic model for runtime validation (strictly excluding 'return')
-            field_definitions = {
-                k: (v, ...) if k in required else (v, None)
-                for k, v in hints.items()
-                if k not in EXCLUDED_PARAMS
-            }
+            # 3. Create a Pydantic model for runtime validation
+            field_definitions = {}
+            for param_name, param in sig.parameters.items():
+                if param_name in EXCLUDED_PARAMS:
+                    continue
+                
+                param_type = hints.get(param_name, Any)
+                default = param.default if param.default is not inspect.Parameter.empty else ...
+                
+                # If it's in required list, we use ..., otherwise we use the default
+                if param_name in required:
+                    field_definitions[param_name] = (param_type, ...)
+                else:
+                    field_definitions[param_name] = (param_type, default)
 
             validation_model = create_model(f"{name}Model", **field_definitions)
 
@@ -103,10 +116,9 @@ class ToolRegistry:
                 model=validation_model,
             )
             return func
-
         return wrapper
 
-    def get_openai_schemas(self) -> list[dict[str, Any]]:
+    def get_openai_schemas(self) -> list:
         return [
             {
                 "type": "function",
@@ -122,7 +134,8 @@ class ToolRegistry:
     def get_definition(self, name: str) -> ToolDefinition | None:
         return self._tools.get(name)
 
-
-# Global instance for use as a decorator
+# Create a global instance for the project
 registry = ToolRegistry()
+
+# Alias the register method as 'tool' for the decorator usage: @tool(...)
 tool = registry.register

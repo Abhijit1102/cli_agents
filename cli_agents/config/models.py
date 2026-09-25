@@ -15,3 +15,7 @@ class AppConfig:
     project_instructions: Optional[str] = None
     mcp_config_path: Optional[Path] = None
     image_model: Optional[str] = None
+    # Jev AI specific configuration
+    jevai_api_key: Optional[str] = None
+    jevai_base_url: Optional[str] = None
+    jevai_model: Optional[str] = None

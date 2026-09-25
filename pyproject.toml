@@ -19,10 +19,12 @@ dependencies = [
     "mcp>=1.27.0",
     "jedi>=0.20.0",
     "seedir>=0.5.1",
+    "typesafe-sdk>=0.7.1",
 ]
 
 [project.scripts]
 cli_agents = "cli_agents.main:main"
+cli_agents_v1 = "cli_agents.v1.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -82,6 +82,43 @@ class AIController:
             return f"[Tool Error: {tool_name}] {e!s}"
 
     # ─────────────────────────────────────────────
+    # TOKEN OPTIMIZATION: TOOL PRUNING
+    # ─────────────────────────────────────────────
+    def _get_optimized_tools(self) -> list:
+        """
+        Reduces input tokens by pruning tools based on current context.
+        Always keeps essential navigation tools.
+        """
+        if not self.tools:
+            return []
+
+        # Essential tools always available
+        essential = {"read_file", "list_folder", "search_project", "run_shell_command"}
+        
+        # Simple context heuristic: if the last message mentions 'diff' or 'git', keep diff tools
+        last_msg = self.memory.get_messages()[-1]["content"] if self.memory.get_messages() else ""
+        last_msg_lower = str(last_msg).lower()
+        
+        filtered = []
+        for tool in self.tools:
+            name = tool["function"]["name"]
+            # Keep if essential, or if it matches the context keyword
+            if any(e in name for e in essential):
+                filtered.append(tool)
+            elif "diff" in name and ("diff" in last_msg_lower or "git" in last_msg_lower):
+                filtered.append(tool)
+            elif "git" in name and ("git" in last_msg_lower):
+                filtered.append(tool)
+            # For MCP tools, we keep them as they are typically specific
+            elif self._is_mcp_tool(name):
+                filtered.append(tool)
+            # Fallback: If the tool list is small (< 10), just keep all
+            elif len(self.tools) <= 10:
+                filtered.append(tool)
+        
+        return filtered if filtered else self.tools
+
+    # ─────────────────────────────────────────────
     # MAIN AGENTIC LOOP
     # ─────────────────────────────────────────────
     async def handle_message(self, user_input: str) -> AsyncGenerator[str, None]:
@@ -100,12 +137,15 @@ class AIController:
         last_signature = None
 
         for iteration in range(1, max_iterations + 1):
+            # Use optimized tool list for this specific request
+            current_tools = self._get_optimized_tools()
+
             try:
                 response = await self.client.chat.completions.create(
                     model=self.config.model,
                     messages=self.memory.get_messages(),
-                    tools=self.tools if self.tools else None,
-                    tool_choice="auto" if self.tools else None,
+                    tools=current_tools if current_tools else None,
+                    tool_choice="auto" if current_tools else None,
                 )
             except Exception as exc:
                 yield f"{_ERROR_PREFIX}API request error: {exc}"
@@ -130,7 +170,6 @@ class AIController:
                 yield f"\n🤖 {assistant_text}\n"
 
             # ── LOOP DETECTION ────────────────────────────────
-            # Hash the current batch of tool calls to detect repetitive loops
             current_signature = tuple(
                 (tc.function.name, tc.function.arguments) for tc in tool_calls
             )
@@ -163,7 +202,6 @@ class AIController:
                     yield f"\x00TOOL_START:{name}:{args_str}"
 
             # ── CONCURRENT EXECUTION ──────────────────────────
-            # Run all calls in this turn concurrently
             results = await asyncio.gather(
                 *(
                     self._execute_tool_safe(name, args)
@@ -173,14 +211,15 @@ class AIController:
 
             # ── EMIT RESULTS & SYNC TO MEMORY ─────────────────
             for (tc, name, _, _), result in zip(parsed_calls, results):
-                if result.startswith(("Error", "[Tool Error:", "[Timeout]")):
-                    yield f"{_ERROR_PREFIX}Tool '{name}': {result}"
+                res_str = str(result)
+                if res_str.startswith(("Error", "[Tool Error:", "[Timeout]")):
+                    yield f"{_ERROR_PREFIX}Tool '{name}': {res_str}"
 
                 if name == "git_diff":
-                    yield f"{_DIFF_PREFIX}{result}"
+                    yield f"{_DIFF_PREFIX}{res_str}"
 
                 yield f"\x00TOOL_DONE:{name}"
 
-                self.memory.append_tool(tc.id, name, result)
+                self.memory.append_tool(tc.id, name, res_str)
 
         yield f"\n⚠️ Max reasoning steps reached ({max_iterations} turns).\n"

@@ -40,6 +40,7 @@ COMMANDS: List[SlashCommand] = [
     SlashCommand("theme white", "Switch to white theme", aliases=["white"]),
     SlashCommand("config", "Display current MODEL and environment (.env) settings used by CLI_agents"),
     SlashCommand("init_project",  "Read codebase and write PROJECT_DESCRIPTION.md"),
+    SlashCommand("compact", "Condense conversation history to save tokens", aliases=["compress", "summarize"]),
 ]
 
 
@@ -89,8 +90,8 @@ def ask_with_palette(label: str) -> str:
     Drop-in replacement for Prompt.ask().
 
     Shows an interactive prompt; typing '/' opens the slash-command palette.
-    The dropdown height and description column width track the live terminal
-    size — resize the window at any time and the UI adapts instantly.
+    The dropdown height auto-adjusts via TERM.menu_height (SIGWINCH / poll)
+    The dropdown height and the input area always has at least 20 chars of breathing room.
 
     Returns the raw input string (empty string on EOF/cancel).
     """

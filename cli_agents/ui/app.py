@@ -72,6 +72,7 @@ class ChatUI:
         commands = [
             ("/help",         "Show this help menu"),
             ("/reset",        "Wipe short-term memory"),
+            ("/compact",      "Condense history to save tokens"),
             ("/usage",        "Check API token consumption"),
             ("/cwd",          "Show current path"),
             ("/history",      "Replay user prompts"),
@@ -186,7 +187,7 @@ class ChatUI:
 
     # ── prompt label ──────────────────────────────────────────────────────────
     def _get_prompt_label(self) -> str:
-        user = os.getenv("USERNAME") or os.getenv("USER") or "user"
+        user = os.getenv("USERNAME") or os.getenv("USER") or "localhost"
         host = os.uname().nodename if hasattr(os, "uname") else "localhost"
         cwd  = os.getcwd()
         home = os.path.expanduser("~")
@@ -213,7 +214,7 @@ class ChatUI:
                     name, _, args = rest.partition(":")
                     renderer.set_tool(name.strip(), args.strip(), is_mcp=True)
 
-                # ── local tool starting ──────────────────────────────────────
+                # ── local tool starting ────────────────────────────────────────────────
                 elif chunk.startswith(_TOOL_START):
                     _, rest = chunk.split(":", 1)
                     name, _, args = rest.partition(":")
@@ -227,7 +228,7 @@ class ChatUI:
                 elif chunk.startswith(_DIFF_PREFIX):
                     diff_outputs.append(chunk[len(_DIFF_PREFIX):])
 
-                # ── formatted error payload ───────────────────────────────
+                # ── formatted error payload ──────────────────────────────────────────────
                 elif chunk.startswith(_ERROR_PREFIX):
                     error_outputs.append(chunk[len(_ERROR_PREFIX):].strip())
 
@@ -302,6 +303,31 @@ class ChatUI:
                 if cmd == "/reset":
                     self.agent.reset(); self.history.clear()
                     self._render_system("Agent memory purged."); continue
+                if cmd == "/compact":
+                    with Status(
+                        "[bold yellow]⚙ Summarising history • compacting memory…[/bold yellow]",
+                        spinner="dots",
+                        console=self.console,
+                    ):
+                        try:
+                            # Use agent client to generate a quick summary of history
+                            messages = self.agent.memory.get_messages()
+                            summary_prompt = "Summarise the current conversation into a concise paragraph, preserving key decisions and technical context."
+                            
+                            # Create a simple request for the summary
+                            response = await self.agent.client.chat.completions.create(
+                                model=self.agent.config.model,
+                                messages=[
+                                    {"role": "system", "content": summary_prompt},
+                                    *messages
+                                ]
+                            )
+                            summary = response.choices[0].message.content
+                            self.agent.memory.compact(summary)
+                            self._render_system("Conversation compacted. Token footprint reduced.", S())
+                        except Exception as e:
+                            render_error(e, context="Memory compaction", console=self.console)
+                    continue
                 if cmd == "/cwd":
                     self._render_system(f"CWD: {os.getcwd()}", P()); continue
                 if cmd == "/mcp":

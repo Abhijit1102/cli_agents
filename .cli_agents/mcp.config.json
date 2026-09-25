@@ -1,11 +1,5 @@
 {
   "mcpServers": {
-    "firecrawl-mcp": {
-      "url": "http://127.0.0.1:8004/sse",
-      "env": {
-        "FIRECRAWL_API_KEY": "fc-2a6420065abb47d1ad1a0c81e9c03469"
-      }
-    },
     "tavily": {
       "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
       "transport": "http"

@@ -50,11 +50,17 @@ If the package is already installed, update it after making changes:
 uv tool install --force .
 ```
 
-The package defines the `cli_agents` command. Verify the installation and start it with:
+The package defines the `cli_agents` and `cli_agents_v1` commands. Verify the installation and start it with:
 
 ```powershell
 cli_agents --help
 cli_agents
+```
+
+Or start the Dual-Process (System 1/2) agent:
+
+```powershell
+cli_agents_v1
 ```
 
 To install from the built wheel instead:
@@ -75,7 +81,8 @@ This file must contain JSON, not dotenv syntax:
 {
   "OPENAI_API_KEY": "your-api-key",
   "OPENAI_BASE_URL": "https://api.openai.com/v1",
-  "MODEL": "gpt-4o-mini"
+  "MODEL": "gpt-4o-mini",
+  "jevai_api_key": "your-jev-api-key"
 }
 ```
 
@@ -86,6 +93,7 @@ Environment variables are also accepted. Values from `env.json` are added only w
 | `OPENAI_API_KEY` | Yes | Main chat API credential |
 | `OPENAI_BASE_URL` | No | OpenAI-compatible API endpoint |
 | `MODEL` | No | Chat model; defaults to `openai/gpt-4o-mini` |
+| `jevai_api_key` | Optional | Required for `cli_agents_v1` (System 1 routing) |
 
 ### Other project files
 
@@ -124,6 +132,12 @@ Run against the current directory:
 
 ```powershell
 python -m cli_agents.main
+```
+
+Run the Dual-Process (v1) agent:
+
+```powershell
+python -m cli_agents.v1
 ```
 
 Run against another project:
